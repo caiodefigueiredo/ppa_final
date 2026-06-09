@@ -4,252 +4,254 @@ import random
 import socket
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from common import RangeBlock, estimate_range_cost, interleave_low_high, make_ordered_blocks, recv_json, send_json
-from storage import Storage
+from common import BlocoIntervalo, criar_blocos_ordenados, enviar_json, estimar_custo_intervalo, intercalar_baixo_alto, receber_json
+from storage import Armazenamento
 
 
 @dataclass
-class WorkerConn:
-    worker_id: str
-    sock: socket.socket
-    file_obj: object
-    host: str
-    cores: int
-    speed_factor: float = 1.0
-    busy: bool = False
-    current_task_id: Optional[int] = None
-    last_sent_at: float = 0.0
-    window: float = 1.0
-    tasks_done: int = 0
-    numbers_done: int = 0
-    primes_done: int = 0
+class ConexaoTrabalhador:
+    id_trabalhador: str
+    conexao: socket.socket
+    arquivo_conexao: object
+    maquina: str
+    nucleos: int
+    fator_lentidao: float = 1.0
+    ocupado: bool = False
+    id_tarefa_atual: Optional[int] = None
+    enviado_em: float = 0.0
+    janela: float = 1.0
+    tarefas_concluidas: int = 0
+    numeros_processados: int = 0
+    primos_encontrados: int = 0
 
 
 @dataclass
-class TaskMeta:
-    task_id: int
-    worker_id: str
-    ranges: List[RangeBlock]
-    mode: str
-    window_before: float
-    estimated_cost: float
-    created_at: float
+class MetadadosTarefa:
+    id_tarefa: int
+    id_trabalhador: str
+    intervalos: List[BlocoIntervalo]
+    modo: str
+    janela_antes: float
+    custo_estimado: float
+    criado_em: float
 
 
-class Master:
-    def __init__(self, args: argparse.Namespace):
-        self.args = args
-        self.storage = Storage(args.db)
-        self.run_id = self.storage.create_run(args.mode, args.start, args.end, args.expected_workers, args.unit_mode, notes='execução mestre-trabalhador por socket')
-        self.workers: Dict[str, WorkerConn] = {}
-        self.pending_blocks: List[RangeBlock] = []
-        self.next_range_start = args.start
-        self.task_id = 0
-        self.tasks: Dict[int, TaskMeta] = {}
-        self.total_primes = 0
-        self.total_numbers_done = 0
-        self.lock = threading.Lock()
-        self.done_event = threading.Event()
+class Mestre:
+    def __init__(self, argumentos: argparse.Namespace):
+        self.argumentos = argumentos
+        self.armazenamento = Armazenamento(argumentos.banco)
+        self.id_execucao = self.armazenamento.criar_execucao(argumentos.modo, argumentos.inicio, argumentos.fim, argumentos.trabalhadores_esperados, argumentos.modo_unidade, observacoes='execução mestre-trabalhador por socket')
+        self.trabalhadores: Dict[str, ConexaoTrabalhador] = {}
+        self.blocos_pendentes: List[BlocoIntervalo] = []
+        self.proximo_inicio_intervalo = argumentos.inicio
+        self.contador_tarefa = 0
+        self.tarefas: Dict[int, MetadadosTarefa] = {}
+        self.total_primos = 0
+        self.total_numeros_processados = 0
+        self.trava = threading.Lock()
+        self.evento_concluido = threading.Event()
 
-    def prepare_blocks(self) -> None:
-        if self.args.unit_mode == 'blocks':
-            blocks = make_ordered_blocks(self.args.start, self.args.end, self.args.base_block_size)
-            if self.args.block_order == 'shuffle':
-                rnd = random.Random(self.args.seed)
-                rnd.shuffle(blocks)
-            elif self.args.block_order == 'interleave':
-                blocks = interleave_low_high(blocks)
-            self.pending_blocks = blocks
+    def preparar_blocos(self) -> None:
+        if self.argumentos.modo_unidade == 'blocos':
+            blocos = criar_blocos_ordenados(self.argumentos.inicio, self.argumentos.fim, self.argumentos.tamanho_bloco_base)
+            if self.argumentos.ordem_blocos == 'embaralhado':
+                aleatorio = random.Random(self.argumentos.semente)
+                aleatorio.shuffle(blocos)
+            elif self.argumentos.ordem_blocos == 'intercalado':
+                blocos = intercalar_baixo_alto(blocos)
+            self.blocos_pendentes = blocos
 
-    def start_server(self) -> socket.socket:
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((self.args.host, self.args.port))
-        server.listen()
-        return server
+    def iniciar_servidor(self) -> socket.socket:
+        servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        servidor.bind((self.argumentos.endereco, self.argumentos.porta))
+        servidor.listen()
+        return servidor
 
-    def accept_workers(self, server: socket.socket) -> None:
-        print(f'[mestre] aguardando {self.args.expected_workers} workers em {self.args.host}:{self.args.port}...')
-        while len(self.workers) < self.args.expected_workers:
-            sock, addr = server.accept()
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            file_obj = sock.makefile('r')
-            msg = recv_json(file_obj)
-            if not msg or msg.get('type') != 'register':
-                sock.close()
+    def aceitar_trabalhadores(self, servidor: socket.socket) -> None:
+        print(f'[mestre] aguardando {self.argumentos.trabalhadores_esperados} trabalhadores em {self.argumentos.endereco}:{self.argumentos.porta}...')
+        while len(self.trabalhadores) < self.argumentos.trabalhadores_esperados:
+            conexao, endereco_cliente = servidor.accept()
+            conexao.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            arquivo_conexao = conexao.makefile('r')
+            mensagem = receber_json(arquivo_conexao)
+            if not mensagem or mensagem.get('tipo') != 'registro':
+                conexao.close()
                 continue
-            worker_id = msg['worker_id']
-            worker = WorkerConn(
-                worker_id=worker_id,
-                sock=sock,
-                file_obj=file_obj,
-                host=msg.get('host', addr[0]),
-                cores=int(msg.get('cores', 1)),
-                speed_factor=float(msg.get('speed_factor', 1.0)),
-                window=float(self.args.initial_window),
+            id_trabalhador = mensagem['id_trabalhador']
+            trabalhador = ConexaoTrabalhador(
+                id_trabalhador=id_trabalhador,
+                conexao=conexao,
+                arquivo_conexao=arquivo_conexao,
+                maquina=mensagem.get('maquina', endereco_cliente[0]),
+                nucleos=int(mensagem.get('nucleos', 1)),
+                fator_lentidao=float(mensagem.get('fator_lentidao', 1.0)),
+                janela=float(self.argumentos.janela_inicial),
             )
-            self.workers[worker_id] = worker
-            self.storage.add_worker(self.run_id, worker_id, worker.host, worker.cores)
-            print(f'[mestre] worker registrado: {worker_id}, host={worker.host}, cores={worker.cores}')
-            t = threading.Thread(target=self.listen_worker, args=(worker,), daemon=True)
-            t.start()
+            self.trabalhadores[id_trabalhador] = trabalhador
+            self.armazenamento.adicionar_trabalhador(self.id_execucao, id_trabalhador, trabalhador.maquina, trabalhador.nucleos)
+            print(f'[mestre] trabalhador registrado: {id_trabalhador}, máquina={trabalhador.maquina}, núcleos={trabalhador.nucleos}')
+            thread = threading.Thread(target=self.escutar_trabalhador, args=(trabalhador,), daemon=True)
+            thread.start()
 
-    def has_more_work(self) -> bool:
-        if self.args.unit_mode == 'blocks':
-            return bool(self.pending_blocks)
-        return self.next_range_start <= self.args.end
+    def existe_trabalho_pendente(self) -> bool:
+        if self.argumentos.modo_unidade == 'blocos':
+            return bool(self.blocos_pendentes)
+        return self.proximo_inicio_intervalo <= self.argumentos.fim
 
-    def allocate_ranges(self, worker: WorkerConn) -> List[RangeBlock]:
-        if self.args.unit_mode == 'blocks':
-            n_blocks = max(1, int(round(worker.window)))
-            allocated = self.pending_blocks[:n_blocks]
-            self.pending_blocks = self.pending_blocks[n_blocks:]
-            return allocated
-        size = max(1, int(round(worker.window)))
-        start = self.next_range_start
-        end = min(self.args.end, start + size - 1)
-        self.next_range_start = end + 1
-        return [RangeBlock(start, end)]
+    def alocar_intervalos(self, trabalhador: ConexaoTrabalhador) -> List[BlocoIntervalo]:
+        if self.argumentos.modo_unidade == 'blocos':
+            quantidade_blocos = max(1, int(round(trabalhador.janela)))
+            alocados = self.blocos_pendentes[:quantidade_blocos]
+            self.blocos_pendentes = self.blocos_pendentes[quantidade_blocos:]
+            return alocados
+        tamanho = max(1, int(round(trabalhador.janela)))
+        inicio = self.proximo_inicio_intervalo
+        fim = min(self.argumentos.fim, inicio + tamanho - 1)
+        self.proximo_inicio_intervalo = fim + 1
+        return [BlocoIntervalo(inicio, fim)]
 
-    def dispatch_if_possible(self, worker: WorkerConn) -> None:
-        with self.lock:
-            if worker.busy or not self.has_more_work():
+    def despachar_se_possivel(self, trabalhador: ConexaoTrabalhador) -> None:
+        with self.trava:
+            if trabalhador.ocupado or not self.existe_trabalho_pendente():
                 return
-            ranges = self.allocate_ranges(worker)
-            if not ranges:
+            intervalos = self.alocar_intervalos(trabalhador)
+            if not intervalos:
                 return
-            self.task_id += 1
-            task_id = self.task_id
-            estimated = sum(estimate_range_cost(r.start, r.end) for r in ranges)
-            meta = TaskMeta(task_id, worker.worker_id, ranges, self.args.mode, worker.window, estimated, time.perf_counter())
-            self.tasks[task_id] = meta
-            worker.busy = True
-            worker.current_task_id = task_id
-            worker.last_sent_at = meta.created_at
-            message = {'type': 'task', 'task_id': task_id, 'mode': self.args.mode, 'ranges': [r.to_dict() for r in ranges]}
-        send_json(worker.sock, message)
+            self.contador_tarefa += 1
+            id_tarefa = self.contador_tarefa
+            custo_estimado = sum(estimar_custo_intervalo(intervalo.inicio, intervalo.fim) for intervalo in intervalos)
+            metadados = MetadadosTarefa(id_tarefa, trabalhador.id_trabalhador, intervalos, self.argumentos.modo, trabalhador.janela, custo_estimado, time.perf_counter())
+            self.tarefas[id_tarefa] = metadados
+            trabalhador.ocupado = True
+            trabalhador.id_tarefa_atual = id_tarefa
+            trabalhador.enviado_em = metadados.criado_em
+            mensagem = {'tipo': 'tarefa', 'id_tarefa': id_tarefa, 'modo': self.argumentos.modo, 'intervalos': [intervalo.para_dict() for intervalo in intervalos]}
+        enviar_json(trabalhador.conexao, mensagem)
 
-    def adjust_window(self, worker: WorkerConn, worker_seconds: float, meta: TaskMeta) -> None:
-        if self.args.mode == 'static':
+    def ajustar_janela(self, trabalhador: ConexaoTrabalhador, segundos_trabalhador: float, metadados: MetadadosTarefa) -> None:
+        if self.argumentos.modo == 'estatico':
             return
-        decision_time = worker_seconds
-        if self.args.calibrated and meta.estimated_cost > 0:
-            # Normaliza em relação ao custo estimado. A constante inicial é calibrada
-            # de forma simples após a primeira execução por worker.
-            units_per_second = meta.estimated_cost / max(worker_seconds, 1e-9)
-            reference = getattr(worker, 'reference_units_per_second', None)
-            if reference is None:
-                setattr(worker, 'reference_units_per_second', units_per_second)
-                decision_time = self.args.target_time
+        tempo_decisao = segundos_trabalhador
+        if self.argumentos.calibrado and metadados.custo_estimado > 0:
+            unidades_por_segundo = metadados.custo_estimado / max(segundos_trabalhador, 1e-9)
+            referencia = getattr(trabalhador, 'referencia_unidades_por_segundo', None)
+            if referencia is None:
+                setattr(trabalhador, 'referencia_unidades_por_segundo', unidades_por_segundo)
+                tempo_decisao = self.argumentos.tempo_alvo
             else:
-                decision_time = self.args.target_time * (reference / max(units_per_second, 1e-9))
-        if decision_time <= self.args.target_time:
-            worker.window = min(self.args.max_window, worker.window + self.args.additive_step)
+                tempo_decisao = self.argumentos.tempo_alvo * (referencia / max(unidades_por_segundo, 1e-9))
+        if tempo_decisao <= self.argumentos.tempo_alvo:
+            trabalhador.janela = min(self.argumentos.janela_maxima, trabalhador.janela + self.argumentos.passo_aditivo)
         else:
-            worker.window = max(self.args.min_window, worker.window * self.args.decrease_factor)
+            trabalhador.janela = max(self.argumentos.janela_minima, trabalhador.janela * self.argumentos.fator_reducao)
 
-    def listen_worker(self, worker: WorkerConn) -> None:
-        while not self.done_event.is_set():
-            msg = recv_json(worker.file_obj)
-            if msg is None:
+    def escutar_trabalhador(self, trabalhador: ConexaoTrabalhador) -> None:
+        while not self.evento_concluido.is_set():
+            mensagem = receber_json(trabalhador.arquivo_conexao)
+            if mensagem is None:
                 break
-            if msg.get('type') == 'result':
-                self.handle_result(worker, msg)
-                self.dispatch_if_possible(worker)
-                self.check_done()
+            if mensagem.get('tipo') == 'resultado':
+                self.tratar_resultado(trabalhador, mensagem)
+                self.despachar_se_possivel(trabalhador)
+                self.verificar_conclusao()
 
-    def handle_result(self, worker: WorkerConn, msg: dict) -> None:
-        finished = time.perf_counter()
-        with self.lock:
-            task_id = int(msg['task_id'])
-            meta = self.tasks.pop(task_id)
-            worker_seconds = float(msg['worker_seconds'])
-            round_trip = finished - meta.created_at
-            primes = int(msg['primes_count'])
-            numbers = int(msg['numbers_count'])
-            self.total_primes += primes
-            self.total_numbers_done += numbers
-            worker.busy = False
-            worker.current_task_id = None
-            worker.tasks_done += 1
-            worker.numbers_done += numbers
-            worker.primes_done += primes
-            self.adjust_window(worker, worker_seconds, meta)
-            self.storage.add_task(self.run_id, {
-                'task_id': task_id,
-                'worker_id': worker.worker_id,
-                'mode': self.args.mode,
-                'ranges_json': json.dumps([r.to_dict() for r in meta.ranges]),
-                'numbers_count': numbers,
-                'primes_count': primes,
-                'window_before': meta.window_before,
-                'window_after': worker.window,
-                'estimated_cost': meta.estimated_cost,
-                'worker_seconds': worker_seconds,
-                'round_trip_seconds': round_trip,
-                'created_at': meta.created_at,
-                'finished_at': finished,
+    def tratar_resultado(self, trabalhador: ConexaoTrabalhador, mensagem: dict) -> None:
+        fim_em = time.perf_counter()
+        with self.trava:
+            id_tarefa = int(mensagem['id_tarefa'])
+            metadados = self.tarefas.pop(id_tarefa)
+            segundos_trabalhador = float(mensagem['segundos_trabalhador'])
+            segundos_ida_volta = fim_em - metadados.criado_em
+            primos = int(mensagem['quantidade_primos'])
+            numeros = int(mensagem['quantidade_numeros'])
+            self.total_primos += primos
+            self.total_numeros_processados += numeros
+            trabalhador.ocupado = False
+            trabalhador.id_tarefa_atual = None
+            trabalhador.tarefas_concluidas += 1
+            trabalhador.numeros_processados += numeros
+            trabalhador.primos_encontrados += primos
+            self.ajustar_janela(trabalhador, segundos_trabalhador, metadados)
+            self.armazenamento.adicionar_tarefa(self.id_execucao, {
+                'id_tarefa': id_tarefa,
+                'id_trabalhador': trabalhador.id_trabalhador,
+                'modo': self.argumentos.modo,
+                'intervalos_json': json.dumps([intervalo.para_dict() for intervalo in metadados.intervalos]),
+                'quantidade_numeros': numeros,
+                'quantidade_primos': primos,
+                'janela_antes': metadados.janela_antes,
+                'janela_depois': trabalhador.janela,
+                'custo_estimado': metadados.custo_estimado,
+                'segundos_trabalhador': segundos_trabalhador,
+                'segundos_ida_volta': segundos_ida_volta,
+                'criado_em': metadados.criado_em,
+                'fim_em': fim_em,
             })
-            print(f"[mestre] task={task_id} worker={worker.worker_id} nums={numbers} primes={primes} tempo={worker_seconds:.4f}s janela {meta.window_before:.1f}->{worker.window:.1f}")
+            print(f"[mestre] tarefa={id_tarefa} trabalhador={trabalhador.id_trabalhador} números={numeros} primos={primos} tempo={segundos_trabalhador:.4f}s janela {metadados.janela_antes:.1f}->{trabalhador.janela:.1f}")
 
-    def check_done(self) -> None:
-        with self.lock:
-            busy = any(w.busy for w in self.workers.values())
-            if not self.has_more_work() and not busy and not self.tasks:
-                self.done_event.set()
+    def verificar_conclusao(self) -> None:
+        with self.trava:
+            algum_ocupado = any(t.ocupado for t in self.trabalhadores.values())
+            if not self.existe_trabalho_pendente() and not algum_ocupado and not self.tarefas:
+                self.evento_concluido.set()
 
-    def run(self) -> None:
-        self.prepare_blocks()
-        server = self.start_server()
-        self.accept_workers(server)
-        start = time.perf_counter()
-        for worker in list(self.workers.values()):
-            self.dispatch_if_possible(worker)
-        self.done_event.wait()
-        total_seconds = time.perf_counter() - start
-        self.storage.finish_run(self.run_id, total_seconds, self.total_primes)
-        for worker in self.workers.values():
+    def executar(self) -> None:
+        self.preparar_blocos()
+        servidor = self.iniciar_servidor()
+        self.aceitar_trabalhadores(servidor)
+        inicio_tempo = time.perf_counter()
+        for trabalhador in list(self.trabalhadores.values()):
+            self.despachar_se_possivel(trabalhador)
+        self.evento_concluido.wait()
+        segundos_totais = time.perf_counter() - inicio_tempo
+        self.armazenamento.finalizar_execucao(self.id_execucao, segundos_totais, self.total_primos)
+        for trabalhador in self.trabalhadores.values():
             try:
-                send_json(worker.sock, {'type': 'shutdown'})
-                worker.sock.close()
+                enviar_json(trabalhador.conexao, {'tipo': 'encerrar'})
+                trabalhador.conexao.close()
             except OSError:
                 pass
-        server.close()
-        print(f'[mestre] execução finalizada. run_id={self.run_id} total_primos={self.total_primes} tempo={total_seconds:.4f}s números={self.total_numbers_done}')
-        self.storage.close()
+        servidor.close()
+        print(f'[mestre] execução finalizada. id_execucao={self.id_execucao} total_primos={self.total_primos} tempo={segundos_totais:.4f}s números={self.total_numeros_processados}')
+        self.armazenamento.fechar()
 
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description='Mestre para escalonamento paralelo de ranges de primos.')
-    p.add_argument('--host', default='0.0.0.0')
-    p.add_argument('--port', type=int, default=9000)
-    p.add_argument('--expected-workers', type=int, required=True)
-    p.add_argument('--start', type=int, required=True)
-    p.add_argument('--end', type=int, required=True)
-    p.add_argument('--mode', choices=['static', 'adaptive'], default='adaptive')
-    p.add_argument('--unit-mode', choices=['range', 'blocks'], default='blocks')
-    p.add_argument('--base-block-size', type=int, default=10000)
-    p.add_argument('--block-order', choices=['ordered', 'shuffle', 'interleave'], default='interleave')
-    p.add_argument('--seed', type=int, default=42)
-    p.add_argument('--initial-window', type=float, default=2.0, help='range size em unit-mode=range ou quantidade de blocos em unit-mode=blocks')
-    p.add_argument('--min-window', type=float, default=1.0)
-    p.add_argument('--max-window', type=float, default=64.0)
-    p.add_argument('--additive-step', type=float, default=1.0)
-    p.add_argument('--decrease-factor', type=float, default=0.5)
-    p.add_argument('--target-time', type=float, default=0.5)
-    p.add_argument('--calibrated', action='store_true')
-    p.add_argument('--db', default='results.db')
-    return p
+def criar_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--endereco', dest='endereco', default='0.0.0.0')
+    parser.add_argument('--porta', dest='porta', type=int, default=9000)
+    parser.add_argument('--trabalhadores', dest='trabalhadores', type=int, required=True)
+    parser.add_argument('--inicio', dest='inicio', type=int, required=True)
+    parser.add_argument('--fim', dest='fim', type=int, required=True)
+    parser.add_argument('--modo', dest='modo', choices=['estatico', 'adaptativo'], default='adaptativo')
+    parser.add_argument('--modo-unidade', dest='modo_unidade', choices=['intervalo', 'blocos'], default='blocos')
+    parser.add_argument('--tamanho-bloco-base', dest='tamanho_bloco_base', type=int, default=10000)
+    parser.add_argument('--ordem-blocos', dest='ordem_blocos', choices=['ordenado', 'embaralhado', 'intercalado'], default='intercalado')
+    parser.add_argument('--semente', dest='semente', type=int, default=42)
+    parser.add_argument('--janela-inicial', dest='janela_inicial', type=float, default=2.0)
+    parser.add_argument('--janela-minima', dest='janela_minima', type=float, default=1.0)
+    parser.add_argument('--janela-maxima', dest='janela_maxima', type=float, default=64.0)
+    parser.add_argument('--passo-aditivo', dest='passo_aditivo', type=float, default=1.0)
+    parser.add_argument('--fator-reducao', dest='fator_reducao', type=float, default=0.5)
+    parser.add_argument('--tempo-alvo', dest='tempo_alvo', type=float, default=0.5)
+    parser.add_argument('--calibrado', dest='calibrado', action='store_true')
+    parser.add_argument('--banco', dest='banco', default='resultados.db')
+    return parser
+
+
+
 
 
 def main() -> None:
-    args = build_parser().parse_args()
-    if args.end < args.start:
-        raise SystemExit('--end deve ser maior ou igual a --start')
-    Master(args).run()
+    parser = criar_parser()
+    argumentos_lidos = parser.parse_args()
+    if argumentos.fim < argumentos.inicio:
+        raise SystemExit('--fim deve ser maior ou igual a --inicio')
+    Mestre(argumentos).executar()
 
 
 if __name__ == '__main__':

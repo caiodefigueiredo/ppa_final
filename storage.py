@@ -3,107 +3,110 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-SCHEMA = '''
-CREATE TABLE IF NOT EXISTS runs (
-    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    mode TEXT NOT NULL,
-    start_value INTEGER NOT NULL,
-    end_value INTEGER NOT NULL,
-    expected_workers INTEGER,
-    unit_mode TEXT,
-    started_at REAL NOT NULL,
-    finished_at REAL,
-    total_seconds REAL,
-    total_primes INTEGER DEFAULT 0,
-    total_numbers INTEGER DEFAULT 0,
-    throughput_numbers_per_sec REAL DEFAULT 0,
-    notes TEXT
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS execucoes (
+    id_execucao INTEGER PRIMARY KEY AUTOINCREMENT,
+    modo TEXT NOT NULL,
+    valor_inicio INTEGER NOT NULL,
+    valor_fim INTEGER NOT NULL,
+    trabalhadores_esperados INTEGER,
+    modo_unidade TEXT,
+    inicio_em REAL NOT NULL,
+    fim_em REAL,
+    segundos_totais REAL,
+    total_primos INTEGER DEFAULT 0,
+    total_numeros INTEGER DEFAULT 0,
+    vazao_numeros_por_segundo REAL DEFAULT 0,
+    observacoes TEXT
 );
 
-CREATE TABLE IF NOT EXISTS tasks (
-    task_id INTEGER PRIMARY KEY,
-    run_id INTEGER NOT NULL,
-    worker_id TEXT,
-    mode TEXT NOT NULL,
-    ranges_json TEXT NOT NULL,
-    numbers_count INTEGER NOT NULL,
-    primes_count INTEGER NOT NULL,
-    window_before REAL,
-    window_after REAL,
-    estimated_cost REAL,
-    worker_seconds REAL NOT NULL,
-    round_trip_seconds REAL,
-    created_at REAL NOT NULL,
-    finished_at REAL NOT NULL,
-    FOREIGN KEY(run_id) REFERENCES runs(run_id)
+CREATE TABLE IF NOT EXISTS tarefas (
+    id_tarefa INTEGER PRIMARY KEY,
+    id_execucao INTEGER NOT NULL,
+    id_trabalhador TEXT,
+    modo TEXT NOT NULL,
+    intervalos_json TEXT NOT NULL,
+    quantidade_numeros INTEGER NOT NULL,
+    quantidade_primos INTEGER NOT NULL,
+    janela_antes REAL,
+    janela_depois REAL,
+    custo_estimado REAL,
+    segundos_trabalhador REAL NOT NULL,
+    segundos_ida_volta REAL,
+    criado_em REAL NOT NULL,
+    fim_em REAL NOT NULL,
+    FOREIGN KEY(id_execucao) REFERENCES execucoes(id_execucao)
 );
 
-CREATE TABLE IF NOT EXISTS workers (
-    run_id INTEGER NOT NULL,
-    worker_id TEXT NOT NULL,
-    host TEXT,
-    cores INTEGER,
-    registered_at REAL,
-    tasks_done INTEGER DEFAULT 0,
-    numbers_done INTEGER DEFAULT 0,
-    primes_done INTEGER DEFAULT 0,
-    total_worker_seconds REAL DEFAULT 0,
-    PRIMARY KEY(run_id, worker_id),
-    FOREIGN KEY(run_id) REFERENCES runs(run_id)
+CREATE TABLE IF NOT EXISTS trabalhadores (
+    id_execucao INTEGER NOT NULL,
+    id_trabalhador TEXT NOT NULL,
+    maquina TEXT,
+    nucleos INTEGER,
+    registrado_em REAL,
+    tarefas_concluidas INTEGER DEFAULT 0,
+    numeros_processados INTEGER DEFAULT 0,
+    primos_encontrados INTEGER DEFAULT 0,
+    total_segundos_trabalhador REAL DEFAULT 0,
+    PRIMARY KEY(id_execucao, id_trabalhador),
+    FOREIGN KEY(id_execucao) REFERENCES execucoes(id_execucao)
 );
-'''
+"""
 
 
-class Storage:
-    def __init__(self, db_path: str):
-        self.db_path = str(Path(db_path))
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.execute('PRAGMA journal_mode=WAL')
-        self.conn.executescript(SCHEMA)
-        self.conn.commit()
+class Armazenamento:
+    def __init__(self, caminho_banco: str):
+        self.caminho_banco = str(Path(caminho_banco))
+        self.conexao = sqlite3.connect(self.caminho_banco, check_same_thread=False)
+        self.conexao.execute('PRAGMA journal_mode=WAL')
+        self.conexao.executescript(SCHEMA)
+        self.conexao.commit()
 
-    def close(self) -> None:
-        self.conn.close()
+    def fechar(self) -> None:
+        self.conexao.close()
 
-    def create_run(self, mode: str, start_value: int, end_value: int, expected_workers: Optional[int], unit_mode: str, notes: str = '') -> int:
-        cur = self.conn.execute(
-            'INSERT INTO runs(mode,start_value,end_value,expected_workers,unit_mode,started_at,notes,total_numbers) VALUES(?,?,?,?,?,?,?,?)',
-            (mode, start_value, end_value, expected_workers, unit_mode, time.time(), notes, max(0, end_value - start_value + 1)),
+    def criar_execucao(self, modo: str, valor_inicio: int, valor_fim: int, trabalhadores_esperados: Optional[int], modo_unidade: str, observacoes: str = '') -> int:
+        cursor = self.conexao.execute(
+            'INSERT INTO execucoes(modo,valor_inicio,valor_fim,trabalhadores_esperados,modo_unidade,inicio_em,observacoes,total_numeros) VALUES(?,?,?,?,?,?,?,?)',
+            (modo, valor_inicio, valor_fim, trabalhadores_esperados, modo_unidade, time.time(), observacoes, max(0, valor_fim - valor_inicio + 1)),
         )
-        self.conn.commit()
-        return int(cur.lastrowid)
+        self.conexao.commit()
+        return int(cursor.lastrowid)
 
-    def finish_run(self, run_id: int, total_seconds: float, total_primes: int) -> None:
-        total_numbers = self.conn.execute('SELECT total_numbers FROM runs WHERE run_id=?', (run_id,)).fetchone()[0]
-        throughput = total_numbers / total_seconds if total_seconds > 0 else 0
-        self.conn.execute(
-            'UPDATE runs SET finished_at=?, total_seconds=?, total_primes=?, throughput_numbers_per_sec=? WHERE run_id=?',
-            (time.time(), total_seconds, total_primes, throughput, run_id),
+    def finalizar_execucao(self, id_execucao: int, segundos_totais: float, total_primos: int) -> None:
+        total_numeros = self.conexao.execute('SELECT total_numeros FROM execucoes WHERE id_execucao=?', (id_execucao,)).fetchone()[0]
+        vazao = total_numeros / segundos_totais if segundos_totais > 0 else 0
+        self.conexao.execute(
+            'UPDATE execucoes SET fim_em=?, segundos_totais=?, total_primos=?, vazao_numeros_por_segundo=? WHERE id_execucao=?',
+            (time.time(), segundos_totais, total_primos, vazao, id_execucao),
         )
-        self.conn.commit()
+        self.conexao.commit()
 
-    def add_worker(self, run_id: int, worker_id: str, host: str, cores: int) -> None:
-        self.conn.execute(
-            'INSERT OR REPLACE INTO workers(run_id,worker_id,host,cores,registered_at) VALUES(?,?,?,?,?)',
-            (run_id, worker_id, host, cores, time.time()),
+    def adicionar_trabalhador(self, id_execucao: int, id_trabalhador: str, maquina: str, nucleos: int) -> None:
+        self.conexao.execute(
+            'INSERT OR REPLACE INTO trabalhadores(id_execucao,id_trabalhador,maquina,nucleos,registrado_em) VALUES(?,?,?,?,?)',
+            (id_execucao, id_trabalhador, maquina, nucleos, time.time()),
         )
-        self.conn.commit()
+        self.conexao.commit()
 
-    def add_task(self, run_id: int, task: Dict[str, Any]) -> None:
-        self.conn.execute(
-            '''INSERT OR REPLACE INTO tasks(task_id,run_id,worker_id,mode,ranges_json,numbers_count,primes_count,
-               window_before,window_after,estimated_cost,worker_seconds,round_trip_seconds,created_at,finished_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+    def adicionar_tarefa(self, id_execucao: int, tarefa: Dict[str, Any]) -> None:
+        self.conexao.execute(
+            """INSERT OR REPLACE INTO tarefas(id_tarefa,id_execucao,id_trabalhador,modo,intervalos_json,quantidade_numeros,quantidade_primos,
+               janela_antes,janela_depois,custo_estimado,segundos_trabalhador,segundos_ida_volta,criado_em,fim_em)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                task['task_id'], run_id, task.get('worker_id'), task['mode'], task['ranges_json'], task['numbers_count'],
-                task['primes_count'], task.get('window_before'), task.get('window_after'), task.get('estimated_cost'),
-                task['worker_seconds'], task.get('round_trip_seconds'), task['created_at'], task['finished_at'],
+                tarefa['id_tarefa'], id_execucao, tarefa.get('id_trabalhador'), tarefa['modo'], tarefa['intervalos_json'], tarefa['quantidade_numeros'],
+                tarefa['quantidade_primos'], tarefa.get('janela_antes'), tarefa.get('janela_depois'), tarefa.get('custo_estimado'),
+                tarefa['segundos_trabalhador'], tarefa.get('segundos_ida_volta'), tarefa['criado_em'], tarefa['fim_em'],
             ),
         )
-        if task.get('worker_id'):
-            self.conn.execute(
-                '''UPDATE workers SET tasks_done=tasks_done+1, numbers_done=numbers_done+?, primes_done=primes_done+?,
-                   total_worker_seconds=total_worker_seconds+? WHERE run_id=? AND worker_id=?''',
-                (task['numbers_count'], task['primes_count'], task['worker_seconds'], run_id, task['worker_id']),
+        if tarefa.get('id_trabalhador'):
+            self.conexao.execute(
+                """UPDATE trabalhadores SET tarefas_concluidas=tarefas_concluidas+1, numeros_processados=numeros_processados+?, primos_encontrados=primos_encontrados+?,
+                   total_segundos_trabalhador=total_segundos_trabalhador+? WHERE id_execucao=? AND id_trabalhador=?""",
+                (tarefa['quantidade_numeros'], tarefa['quantidade_primos'], tarefa['segundos_trabalhador'], id_execucao, tarefa['id_trabalhador']),
             )
-        self.conn.commit()
+        self.conexao.commit()
+
+# Alias mantido para compatibilidade com imports antigos.
+Storage = Armazenamento

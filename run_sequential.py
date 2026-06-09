@@ -14,7 +14,7 @@ def main() -> None:
     args = parser.parse_args()
 
     storage = Storage(args.db)
-    run_id = storage.create_run('sequential', args.start, args.end, expected_workers=1, unit_mode='single', notes='linha de base sequencial')
+    run_id = storage.create_run('sequential', args.start, args.end, trabalhadores=1, formato_trabalho='single', observacao='linha de base sequencial')
     t0 = time.perf_counter()
     primes = count_primes_range(args.start, args.end)
     elapsed = time.perf_counter() - t0
