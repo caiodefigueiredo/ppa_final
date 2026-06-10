@@ -71,7 +71,7 @@ class Armazenamento:
             (modo, valor_inicio, valor_fim, trabalhadores_esperados, modo_unidade, time.time(), observacoes, max(0, valor_fim - valor_inicio + 1)),
         )
         self.conexao.commit()
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid) #type: ignore
 
     def finalizar_execucao(self, id_execucao: int, segundos_totais: float, total_primos: int) -> None:
         total_numeros = self.conexao.execute('SELECT total_numeros FROM execucoes WHERE id_execucao=?', (id_execucao,)).fetchone()[0]

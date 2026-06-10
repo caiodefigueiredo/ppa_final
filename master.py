@@ -58,9 +58,9 @@ class Mestre:
         if self.argumentos.modo_unidade == 'blocos':
             blocos = criar_blocos_ordenados(self.argumentos.inicio, self.argumentos.fim, self.argumentos.tamanho_bloco_base)
             if self.argumentos.ordem_blocos == 'embaralhado':
-                aleatorio = random.Random(self.argumentos.semente)
+                aleatorio = random.Random(self.argumentos.seed)
                 aleatorio.shuffle(blocos)
-            elif self.argumentos.ordem_blocos == 'intercalado':
+            elif self.argumentos.ordem_blocos == 'balanceado':
                 blocos = intercalar_baixo_alto(blocos)
             self.blocos_pendentes = blocos
 
@@ -230,9 +230,8 @@ def criar_parser() -> argparse.ArgumentParser:
     parser.add_argument('--modo', dest='modo', choices=['estatico', 'adaptativo'], default='adaptativo')
     parser.add_argument('--modo-unidade', dest='modo_unidade', choices=['intervalo', 'blocos'], default='blocos')
     parser.add_argument('--tamanho-bloco-base', dest='tamanho_bloco_base', type=int, default=10000)
-    parser.add_argument('--ordem-blocos', dest='ordem_blocos', choices=['ordenado', 'embaralhado', 'intercalado'], default='intercalado')
-    parser.add_argument('--semente', dest='semente', type=int, default=42)
-    parser.add_argument('--janela-inicial', dest='janela_inicial', type=float, default=2.0)
+    parser.add_argument('--ordem-blocos', dest='ordem_blocos', choices=['ordenado', 'embaralhado', 'balanceado'], default='balanceado')
+    parser.add_argument('--seed', dest='seed', type=float, default=2.0)
     parser.add_argument('--janela-minima', dest='janela_minima', type=float, default=1.0)
     parser.add_argument('--janela-maxima', dest='janela_maxima', type=float, default=64.0)
     parser.add_argument('--passo-aditivo', dest='passo_aditivo', type=float, default=1.0)
@@ -242,13 +241,10 @@ def criar_parser() -> argparse.ArgumentParser:
     parser.add_argument('--banco', dest='banco', default='resultados.db')
     return parser
 
-
-
-
-
 def main() -> None:
     parser = criar_parser()
-    argumentos_lidos = parser.parse_args()
+    argumentoss_lidos = parser.parse_args()
+    argumentos = argumentoss_lidos.Namespace     
     if argumentos.fim < argumentos.inicio:
         raise SystemExit('--fim deve ser maior ou igual a --inicio')
     Mestre(argumentos).executar()
