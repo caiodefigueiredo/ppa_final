@@ -7,8 +7,8 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from common import BlocoIntervalo, criar_blocos_ordenados, enviar_json, estimar_custo_intervalo, intercalar_baixo_alto, receber_json
-from storage import Armazenamento
+from funcoes_mestre import BlocoIntervalo, criar_blocos_ordenados, enviar_json, estimar_custo_intervalo, intercalar_baixo_alto, receber_json
+from armazenamento import Armazenamento
 
 
 @dataclass
@@ -18,7 +18,6 @@ class ConexaoTrabalhador:
     arquivo_conexao: object
     maquina: str
     nucleos: int
-    fator_lentidao: float = 1.0
     ocupado: bool = False
     id_tarefa_atual: Optional[int] = None
     enviado_em: float = 0.0
@@ -58,9 +57,9 @@ class Mestre:
         if self.argumentos.modo_unidade == 'blocos':
             blocos = criar_blocos_ordenados(self.argumentos.inicio, self.argumentos.fim, self.argumentos.tamanho_bloco_base)
             if self.argumentos.ordem_blocos == 'embaralhado':
-                aleatorio = random.Random(self.argumentos.seed)
+                aleatorio = random.Random(self.argumentos.semente)
                 aleatorio.shuffle(blocos)
-            elif self.argumentos.ordem_blocos == 'balanceado':
+            elif self.argumentos.ordem_blocos == 'intercalado':
                 blocos = intercalar_baixo_alto(blocos)
             self.blocos_pendentes = blocos
 
@@ -88,7 +87,6 @@ class Mestre:
                 arquivo_conexao=arquivo_conexao,
                 maquina=mensagem.get('maquina', endereco_cliente[0]),
                 nucleos=int(mensagem.get('nucleos', 1)),
-                fator_lentidao=float(mensagem.get('fator_lentidao', 1.0)),
                 janela=float(self.argumentos.janela_inicial),
             )
             self.trabalhadores[id_trabalhador] = trabalhador
@@ -221,30 +219,44 @@ class Mestre:
 
 
 def criar_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--endereco', dest='endereco', default='0.0.0.0')
-    parser.add_argument('--porta', dest='porta', type=int, default=9000)
-    parser.add_argument('--trabalhadores', dest='trabalhadores', type=int, required=True)
-    parser.add_argument('--inicio', dest='inicio', type=int, required=True)
-    parser.add_argument('--fim', dest='fim', type=int, required=True)
-    parser.add_argument('--modo', dest='modo', choices=['estatico', 'adaptativo'], default='adaptativo')
-    parser.add_argument('--modo-unidade', dest='modo_unidade', choices=['intervalo', 'blocos'], default='blocos')
-    parser.add_argument('--tamanho-bloco-base', dest='tamanho_bloco_base', type=int, default=10000)
-    parser.add_argument('--ordem-blocos', dest='ordem_blocos', choices=['ordenado', 'embaralhado', 'balanceado'], default='balanceado')
-    parser.add_argument('--seed', dest='seed', type=float, default=2.0)
-    parser.add_argument('--janela-minima', dest='janela_minima', type=float, default=1.0)
-    parser.add_argument('--janela-maxima', dest='janela_maxima', type=float, default=64.0)
-    parser.add_argument('--passo-aditivo', dest='passo_aditivo', type=float, default=1.0)
-    parser.add_argument('--fator-reducao', dest='fator_reducao', type=float, default=0.5)
-    parser.add_argument('--tempo-alvo', dest='tempo_alvo', type=float, default=0.5)
-    parser.add_argument('--calibrado', dest='calibrado', action='store_true')
-    parser.add_argument('--banco', dest='banco', default='resultados.db')
+    parser = argparse.ArgumentParser(description='Mestre para escalonamento paralelo de intervalos de primos.')
+    parser.add_argument('--endereco', '--host', dest='endereco', default='0.0.0.0')
+    parser.add_argument('--porta', '--port', dest='porta', type=int, default=9000)
+    parser.add_argument('--trabalhadores-esperados', '--expected-workers', dest='trabalhadores_esperados', type=int, required=True)
+    parser.add_argument('--inicio', '--start', dest='inicio', type=int, required=True)
+    parser.add_argument('--fim', '--end', dest='fim', type=int, required=True)
+    parser.add_argument('--modo', '--mode', dest='modo', choices=['estatico', 'adaptativo', 'static', 'adaptive'], default='adaptativo')
+    parser.add_argument('--modo-unidade', '--unit-mode', dest='modo_unidade', choices=['intervalo', 'blocos', 'range', 'blocks'], default='blocos')
+    parser.add_argument('--tamanho-bloco-base', '--base-block-size', dest='tamanho_bloco_base', type=int, default=10000)
+    parser.add_argument('--ordem-blocos', '--block-order', dest='ordem_blocos', choices=['ordenado', 'embaralhado', 'intercalado', 'ordered', 'shuffle', 'interleave'], default='intercalado')
+    parser.add_argument('--semente', '--seed', dest='semente', type=int, default=42)
+    parser.add_argument('--janela-inicial', '--initial-window', dest='janela_inicial', type=float, default=2.0, help='tamanho do intervalo em modo_unidade=intervalo ou quantidade de blocos em modo_unidade=blocos')
+    parser.add_argument('--janela-minima', '--min-window', dest='janela_minima', type=float, default=1.0)
+    parser.add_argument('--janela-maxima', '--max-window', dest='janela_maxima', type=float, default=64.0)
+    parser.add_argument('--passo-aditivo', '--additive-step', dest='passo_aditivo', type=float, default=1.0)
+    parser.add_argument('--fator-reducao', '--decrease-factor', dest='fator_reducao', type=float, default=0.5)
+    parser.add_argument('--tempo-alvo', '--target-time', dest='tempo_alvo', type=float, default=0.5)
+    parser.add_argument('--calibrado', '--calibrated', dest='calibrado', action='store_true')
+    parser.add_argument('--banco', '--db', dest='banco', default='resultados.db')
     return parser
 
+
+def normalizar_argumentos(argumentos: argparse.Namespace) -> argparse.Namespace:
+    if argumentos.modo == 'static':
+        argumentos.modo = 'estatico'
+    elif argumentos.modo == 'adaptive':
+        argumentos.modo = 'adaptativo'
+    if argumentos.modo_unidade == 'range':
+        argumentos.modo_unidade = 'intervalo'
+    elif argumentos.modo_unidade == 'blocks':
+        argumentos.modo_unidade = 'blocos'
+    mapa_ordem = {'ordered': 'ordenado', 'shuffle': 'embaralhado', 'interleave': 'intercalado'}
+    argumentos.ordem_blocos = mapa_ordem.get(argumentos.ordem_blocos, argumentos.ordem_blocos)
+    return argumentos
+
+
 def main() -> None:
-    parser = criar_parser()
-    argumentoss_lidos = parser.parse_args()
-    argumentos = argumentoss_lidos.Namespace     
+    argumentos = normalizar_argumentos(criar_parser().parse_args())
     if argumentos.fim < argumentos.inicio:
         raise SystemExit('--fim deve ser maior ou igual a --inicio')
     Mestre(argumentos).executar()
