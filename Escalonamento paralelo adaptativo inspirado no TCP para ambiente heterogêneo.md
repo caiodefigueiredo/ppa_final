@@ -1,68 +1,96 @@
-# Escalonamento paralelo adaptativo inspirado no TCP para ambiente heterogêneo
+# Escalonamento paralelo adaptativo inspirado no TCP
 
-Este projeto implementa uma prova de conceito em Python para o trabalho de **Programação Paralela Avançada**. O sistema usa um modelo **mestre-trabalhador** para distribuir ranges numéricos a trabalhadores remotos ou locais, que contam números primos e retornam métricas de processamento. O mestre ajusta dinamicamente o tamanho da próxima carga enviada a cada trabalhador usando uma regra inspirada em **AIMD**: aumento aditivo e diminuição multiplicativa.
+Este projeto implementa, em Python, um protótipo de **escalonamento paralelo adaptativo** inspirado em conceitos da camada TCP. O sistema possui um processo **mestre**, vários **trabalhadores** e três modos de avaliação: execução sequencial, paralela estática e paralela adaptativa.
 
-A proposta implementa três modos de comparação. O modo **sequencial** processa todo o range em um único processo e serve como linha de base. O modo **paralelo estático** distribui blocos fixos aos trabalhadores. O modo **paralelo adaptativo** ajusta a janela individual de cada trabalhador conforme seu tempo de resposta, simulando uma lógica inspirada em janela, ACK e RTT do TCP.
+A versão atual usa nomes em português nas variáveis principais, nos campos das mensagens entre mestre e trabalhadores e nas tabelas SQLite. Alguns argumentos antigos em inglês foram mantidos como aliases para facilitar compatibilidade, mas a documentação recomenda os nomes em português.
 
 ## Estrutura
 
-```text
-src/
-├── common.py              # protocolo JSON por socket e utilidades
-├── prime.py               # contagem de primos em ranges
-├── storage.py             # persistência SQLite das métricas
-├── worker_node.py         # nó trabalhador, com multiprocessing interno
-├── master.py              # mestre socket para modos static/adaptive
-├── run_sequential.py      # execução sequencial de referência
-├── run_local_experiment.py# orquestra mestre + workers locais para teste rápido
-└── plot_results.py        # geração de gráficos a partir do SQLite
-```
+| Arquivo | Função |
+|---|---|
+| `src/mestre.py` | Processo mestre responsável por distribuir intervalos, ajustar janelas, aceitar dinamicamente até 30 trabalhadores conectados manualmente por IP e porta, monitorar heartbeats e reenfileirar tarefas de trabalhadores inativos. |
+| `src/trabalhador.py` | Processo trabalhador responsável por contar primos nos intervalos recebidos, detectar localmente seus próprios núcleos por padrão e enviar heartbeats periódicos ao mestre. |
+| `src/run_sequential.py` | Linha de base sequencial. |
+| `src/run_local_experiment.py` | Executa mestre e trabalhadores locais automaticamente. |
+| `src/armazenamento.py` | Persistência SQLite com tabelas `execucoes`, `tarefas` e `trabalhadores`. |
+| `src/plot_results.py` | Gera gráficos a partir do banco de resultados. |
 
-## Execução rápida local
-
-Para validar o projeto em uma única máquina, execute:
+## Execução rápida
 
 ```bash
-cd escalonamento_tcp_primos
-python3 src/run_local_experiment.py --start 1000000 --end 1200000 --workers 3 --mode adaptive --worker-cores 1 --target-time 0.4
+python3 src/run_sequential.py --inicio 1000000 --fim 1200000 --banco resultados.db
+
+python3 src/run_local_experiment.py \
+  --inicio 1000000 \
+  --fim 1400000 \
+  --trabalhadores 3 \
+  --modo adaptativo \
+  --porta 9101 \
+  --banco resultados.db \
+  --tamanho-bloco-base 10000 \
+  --tempo-alvo 0.4
+
+python3 src/run_local_experiment.py \
+  --inicio 1000000 \
+  --fim 1400000 \
+  --trabalhadores 3 \
+  --modo estatico \
+  --porta 9102 \
+  --banco resultados.db \
+  --tamanho-bloco-base 10000
+
+python3 src/plot_results.py --banco resultados.db --saida graficos
 ```
 
-Para comparar com paralelo estático:
+Por padrão, o script de experimento local não força `--nucleos` nos trabalhadores. Cada trabalhador usa `auto` e detecta as CPUs disponíveis na própria máquina. O argumento `--nucleos-trabalhador` continua existindo apenas para limitar artificialmente o multiprocessamento local em testes controlados.
+
+## Execução distribuída manual
+
+Para uma execução em rede, primeiro inicie o mestre informando o endereço de escuta, a porta e o limite máximo de trabalhadores. O valor de `--max-trabalhadores` deve estar entre **1 e 30**. O mestre começa o processamento quando o limite é atingido ou quando passa o tempo configurado em `--tempo-espera-trabalhadores` depois que o mínimo configurado em `--min-trabalhadores` já foi alcançado. Mesmo após o início do processamento, o mestre continua aceitando trabalhadores dinamicamente até o limite máximo, desde que ainda existam tarefas pendentes a distribuir.
 
 ```bash
-python3 src/run_local_experiment.py --start 1000000 --end 1200000 --workers 3 --mode static --worker-cores 1
+python3 src/mestre.py \
+  --endereco 0.0.0.0 \
+  --porta 9000 \
+  --max-trabalhadores 30 \
+  --min-trabalhadores 1 \
+  --tempo-espera-trabalhadores 60 \
+  --timeout-heartbeat 180 \
+  --intervalo-monitoramento-heartbeat 5 \
+  --inicio 1000000 \
+  --fim 5000000 \
+  --modo adaptativo \
+  --modo-unidade blocos \
+  --tamanho-bloco-base 10000 \
+  --banco resultados.db
 ```
 
-Para gerar a linha de base sequencial:
+Depois, em cada máquina trabalhadora, execute o trabalhador apontando para o IP e a porta do mestre. Cada instância deve possuir um identificador único.
 
 ```bash
-python3 src/run_sequential.py --start 1000000 --end 1200000 --db results.db
+python3 src/trabalhador.py \
+  --endereco-mestre IP_DO_MESTRE \
+  --porta-mestre 9000 \
+  --id-trabalhador trabalhador-01 \
+  --intervalo-heartbeat 60
 ```
 
-Para gerar gráficos:
+## Heartbeat e tolerância a falhas
 
-```bash
-python3 src/plot_results.py --db results.db --out-dir plots
-```
+O trabalhador envia periodicamente ao mestre uma mensagem JSON do tipo `heartbeat`. O intervalo padrão é de **60 segundos**, configurável no trabalhador com `--intervalo-heartbeat`. O mestre mantém, para cada conexão ativa, o instante do último heartbeat recebido e executa uma thread de monitoramento independente.
 
-## Execução distribuída com sockets
+| Componente | Parâmetro | Valor padrão | Finalidade |
+|---|---:|---:|---|
+| Trabalhador | `--intervalo-heartbeat` | `60` | Define o intervalo, em segundos, entre heartbeats enviados ao mestre. |
+| Mestre | `--timeout-heartbeat` | `180` | Define o tempo máximo, em segundos, sem heartbeat antes de considerar o trabalhador inativo. |
+| Mestre | `--intervalo-monitoramento-heartbeat` | `5` | Define a periodicidade, em segundos, da verificação interna de expiração dos heartbeats. |
 
-Em cada máquina trabalhadora, inicie um worker apontando para o IP do mestre:
+Quando um trabalhador fica inativo por mais tempo que `--timeout-heartbeat`, o mestre fecha sua conexão, remove o trabalhador da lista de ativos e verifica se havia uma tarefa em andamento associada a ele. Se houver, os intervalos dessa tarefa são devolvidos à fila de pendências para que outro trabalhador possa processá-los. Resultados tardios vindos de um trabalhador já desconectado são ignorados, evitando dupla contagem.
 
-```bash
-python3 src/worker_node.py --master-host IP_DO_MESTRE --master-port 9000 --worker-id worker-01 --cores auto
-```
+## Campos principais do SQLite
 
-No mestre, depois de iniciar os workers, execute:
-
-```bash
-python3 src/master.py --host 0.0.0.0 --port 9000 --expected-workers 3 --start 1000000 --end 2000000 --mode adaptive --db results.db
-```
-
-O mestre aguardará os trabalhadores se registrarem, distribuirá tarefas e salvará os resultados no SQLite.
-
-## Observações metodológicas
-
-A comunicação por socket transfere poucos dados: basicamente ranges `[inicio, fim]` e métricas. O custo computacional fica concentrado nos trabalhadores, que testam primalidade dentro do intervalo recebido. Isso permite avaliar desempenho, throughput e balanceamento sem que a rede domine o experimento.
-
-O modo adaptativo possui duas variações importantes. Em `--unit-mode range`, a janela representa diretamente o tamanho do range. Em `--unit-mode blocks`, o range total é dividido em blocos base embaralhados ou intercalados, e a janela representa a quantidade de blocos enviados por rodada. A segunda opção reduz o viés natural causado por números maiores exigirem mais trabalho.
+| Tabela | Campos principais |
+|---|---|
+| `execucoes` | `id_execucao`, `modo`, `valor_inicio`, `valor_fim`, `segundos_totais`, `total_primos`, `vazao_numeros_por_segundo`. |
+| `tarefas` | `id_tarefa`, `id_trabalhador`, `intervalos_json`, `quantidade_numeros`, `quantidade_primos`, `janela_antes`, `janela_depois`. |
+| `trabalhadores` | `id_trabalhador`, `maquina`, `nucleos`, `tarefas_concluidas`, `numeros_processados`, `primos_encontrados`. |

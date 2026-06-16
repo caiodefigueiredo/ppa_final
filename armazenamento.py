@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-SCHEMA = """
+ESQUEMA = """
 CREATE TABLE IF NOT EXISTS execucoes (
     id_execucao INTEGER PRIMARY KEY AUTOINCREMENT,
     modo TEXT NOT NULL,
@@ -59,7 +59,7 @@ class Armazenamento:
         self.caminho_banco = str(Path(caminho_banco))
         self.conexao = sqlite3.connect(self.caminho_banco, check_same_thread=False)
         self.conexao.execute('PRAGMA journal_mode=WAL')
-        self.conexao.executescript(SCHEMA)
+        self.conexao.executescript(ESQUEMA)
         self.conexao.commit()
 
     def fechar(self) -> None:

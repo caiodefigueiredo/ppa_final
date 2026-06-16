@@ -1,63 +1,67 @@
 import argparse
-import os
-import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 
-def wait_process(proc: subprocess.Popen) -> int:
-    return proc.wait()
+def normalizar_modo(modo: str) -> str:
+    return {'static': 'estatico', 'adaptive': 'adaptativo'}.get(modo, modo)
+
+
+def normalizar_unidade(unidade: str) -> str:
+    return {'range': 'intervalo', 'blocks': 'blocos'}.get(unidade, unidade)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Executa mestre e workers locais para validação rápida.')
-    parser.add_argument('--start', type=int, required=True)
-    parser.add_argument('--end', type=int, required=True)
-    parser.add_argument('--workers', type=int, default=3)
-    parser.add_argument('--mode', choices=['static', 'adaptive'], default='adaptive')
-    parser.add_argument('--unit-mode', choices=['range', 'blocks'], default='blocks')
-    parser.add_argument('--worker-cores', default='1')
-    parser.add_argument('--port', type=int, default=9000)
-    parser.add_argument('--db', default='results.db')
-    parser.add_argument('--base-block-size', type=int, default=10000)
-    parser.add_argument('--target-time', type=float, default=0.5)
-    parser.add_argument('--calibrated', action='store_true')
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Executa mestre e trabalhadores locais para validação rápida.')
+    parser.add_argument('--inicio', '--start', dest='inicio', type=int, required=True)
+    parser.add_argument('--fim', '--end', dest='fim', type=int, required=True)
+    parser.add_argument('--trabalhadores', '--workers', dest='trabalhadores', type=int, default=3)
+    parser.add_argument('--modo', '--mode', dest='modo', choices=['estatico', 'adaptativo', 'static', 'adaptive'], default='adaptativo')
+    parser.add_argument('--modo-unidade', '--unit-mode', dest='modo_unidade', choices=['intervalo', 'blocos', 'range', 'blocks'], default='blocos')
+    parser.add_argument('--nucleos-trabalhador', '--worker-cores', dest='nucleos_trabalhador', default=None, help='opcional: sobrescreve localmente os núcleos usados por cada trabalhador; se omitido, cada worker usa auto')
+    parser.add_argument('--porta', '--port', dest='porta', type=int, default=9000)
+    parser.add_argument('--banco', '--db', dest='banco', default='resultados.db')
+    parser.add_argument('--tamanho-bloco-base', '--base-block-size', dest='tamanho_bloco_base', type=int, default=10000)
+    parser.add_argument('--tempo-alvo', '--target-time', dest='tempo_alvo', type=float, default=0.5)
+    parser.add_argument('--calibrado', '--calibrated', dest='calibrado', action='store_true')
+    argumentos = parser.parse_args()
 
-    src_dir = Path(__file__).resolve().parent
-    master_cmd = [
-        sys.executable, str(src_dir / 'master.py'),
-        '--host', '127.0.0.1', '--port', str(args.port), '--expected-workers', str(args.workers),
-        '--start', str(args.start), '--end', str(args.end), '--mode', args.mode,
-        '--unit-mode', args.unit_mode, '--base-block-size', str(args.base_block_size),
-        '--target-time', str(args.target_time), '--db', args.db,
+    diretorio_src = Path(__file__).resolve().parent
+    modo = normalizar_modo(argumentos.modo)
+    modo_unidade = normalizar_unidade(argumentos.modo_unidade)
+    comando_mestre = [
+        sys.executable, str(diretorio_src / 'mestre.py'),
+        '--endereco', '127.0.0.1', '--porta', str(argumentos.porta), '--max-trabalhadores', str(argumentos.trabalhadores),
+        '--inicio', str(argumentos.inicio), '--fim', str(argumentos.fim), '--modo', modo,
+        '--modo-unidade', modo_unidade, '--tamanho-bloco-base', str(argumentos.tamanho_bloco_base),
+        '--tempo-alvo', str(argumentos.tempo_alvo), '--banco', argumentos.banco,
     ]
-    if args.calibrated:
-        master_cmd.append('--calibrated')
+    if argumentos.calibrado:
+        comando_mestre.append('--calibrado')
 
-    master = subprocess.Popen(master_cmd)
-    workers = []
+    mestre = subprocess.Popen(comando_mestre)
+    trabalhadores = []
     try:
         time.sleep(0.8)
-        for i in range(args.workers):
-            # Simula pequena heterogeneidade local: workers com fatores diferentes.
-            speed_factor = 1.0 + (i % 3) * 0.6
-            cmd = [
-                sys.executable, str(src_dir / 'worker_node.py'), '--master-host', '127.0.0.1', '--master-port', str(args.port),
-                '--worker-id', f'local-worker-{i+1}', '--cores', args.worker_cores, '--speed-factor', str(speed_factor),
+        for indice in range(argumentos.trabalhadores):
+            comando_trabalhador = [
+                sys.executable, str(diretorio_src / 'trabalhador.py'), '--endereco-mestre', '127.0.0.1', '--porta-mestre', str(argumentos.porta),
+                '--id-trabalhador', f'trabalhador-local-{indice+1}',
             ]
-            workers.append(subprocess.Popen(cmd))
-        rc = master.wait()
-        if rc != 0:
-            raise SystemExit(rc)
+            if argumentos.nucleos_trabalhador is not None:
+                comando_trabalhador.extend(['--nucleos', argumentos.nucleos_trabalhador])
+            trabalhadores.append(subprocess.Popen(comando_trabalhador))
+        codigo_retorno = mestre.wait()
+        if codigo_retorno != 0:
+            raise SystemExit(codigo_retorno)
     finally:
-        for proc in workers:
-            if proc.poll() is None:
-                proc.terminate()
-        if master.poll() is None:
-            master.terminate()
+        for processo in trabalhadores:
+            if processo.poll() is None:
+                processo.terminate()
+        if mestre.poll() is None:
+            mestre.terminate()
 
 
 if __name__ == '__main__':
