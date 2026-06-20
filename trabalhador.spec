@@ -5,7 +5,7 @@ a = Analysis(
     ['trabalhador.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('funcoes_trabalhador.py', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
