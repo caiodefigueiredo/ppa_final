@@ -25,19 +25,6 @@ def receber_json(arquivo_conexao) -> Optional[Dict[str, Any]]:
     return json.loads(linha)
 
 
-def conectar_com_tentativas(endereco: str, porta: int, tentativas: int = 60, espera: float = 0.5) -> socket.socket:
-    ultimo_erro = None
-    for _ in range(tentativas):
-        try:
-            conexao = socket.create_connection((endereco, porta), timeout=5)
-            conexao.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            return conexao
-        except OSError as erro:
-            ultimo_erro = erro
-            time.sleep(espera)
-    raise ConnectionError(f'Não foi possível conectar a {endereco}:{porta}: {ultimo_erro}')
-
-
 @dataclass
 class BlocoIntervalo:
     inicio: int

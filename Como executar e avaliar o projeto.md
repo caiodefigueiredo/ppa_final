@@ -70,7 +70,6 @@ python3 src/mestre.py \
   --inicio 1000000 \
   --fim 5000000 \
   --modo adaptativo \
-  --modo-unidade blocos \
   --tamanho-bloco-base 10000 \
   --tempo-alvo 0.5 \
   --banco resultados.db
@@ -98,7 +97,7 @@ Cada trabalhador envia uma mensagem JSON `{"tipo": "heartbeat"}` ao mestre em in
 | `--timeout-heartbeat` | Mestre | `180` | Tempo máximo, em segundos, sem heartbeat antes de desconectar o trabalhador. |
 | `--intervalo-monitoramento-heartbeat` | Mestre | `5` | Intervalo, em segundos, entre verificações de trabalhadores expirados. |
 
-Se o mestre não receber heartbeat de um trabalhador durante **3 minutos** por padrão, ele considera esse trabalhador inativo, fecha a conexão e remove a instância da lista de trabalhadores ativos. Caso esse trabalhador estivesse processando uma tarefa, os intervalos associados à tarefa são recolocados na fila de pendências para que outro trabalhador livre possa processá-los. Esse comportamento evita que uma falha de máquina, rede ou processo deixe parte do intervalo total sem contagem.
+Se o mestre não receber heartbeat de um trabalhador durante **3 minutos** por padrão, ele considera esse trabalhador inativo, fecha a conexão e remove a instância da lista de trabalhadores ativos. Caso esse trabalhador estivesse processando uma tarefa, os blocos associados à tarefa são recolocados na fila de pendências para que outro trabalhador livre possa processá-los. Esse comportamento evita que uma falha de máquina, rede ou processo deixe parte do intervalo total sem contagem.
 
 Para testes controlados de tolerância a falhas, é possível reduzir temporariamente os tempos de heartbeat. Por exemplo, o mestre pode ser iniciado com `--timeout-heartbeat 3 --intervalo-monitoramento-heartbeat 1`, enquanto um trabalhador saudável usa `--intervalo-heartbeat 1`. Em uma execução real, recomenda-se manter os padrões de 60 segundos para o envio e 180 segundos para o timeout.
 
@@ -124,7 +123,7 @@ Para testes controlados de tolerância a falhas, é possível reduzir temporaria
 
 | Etapa PCAM | Aplicação no código |
 |---|---|
-| Partitioning | O range total é dividido em blocos ou intervalos menores. |
+| Partitioning | O intervalo total é dividido em blocos menores, definidos por `--tamanho-bloco-base`. |
 | Communication | O mestre envia tarefas por socket, recebe respostas com tempo, quantidade processada e primos encontrados, e monitora heartbeats dos trabalhadores. |
 | Agglomeration | A janela controla o agrupamento de blocos em pacotes maiores ou menores. |
 | Mapping | O mestre decide dinamicamente qual carga enviar para cada trabalhador com base em sua resposta anterior e devolve à fila as tarefas de trabalhadores desconectados. |

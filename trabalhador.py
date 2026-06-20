@@ -149,8 +149,8 @@ def main() -> None:
     parser.add_argument('--endereco-mestre', '--master-host', dest='endereco_mestre', required=True)
     parser.add_argument('--porta-mestre', '--master-port', dest='porta_mestre', type=int, default=9000)
     parser.add_argument('--id-trabalhador', '--worker-id', dest='id_trabalhador', default=None)
-    parser.add_argument('--nucleos', '--cores', dest='nucleos', default='auto', help='configuração local do trabalhador: auto usa as CPUs disponíveis neste worker, ou informe um número inteiro')
-    parser.add_argument('--intervalo-heartbeat', dest='intervalo_heartbeat', type=float, default=60.0, help='intervalo em segundos entre heartbeats enviados ao mestre; padrão: 60 segundos')
+    parser.add_argument('--nucleos', '--cores', dest='nucleos', default='auto')
+    parser.add_argument('--intervalo-heartbeat', dest='intervalo_heartbeat', type=float, default=60.0)
     argumentos = parser.parse_args()
     if argumentos.intervalo_heartbeat <= 0:
         raise SystemExit('--intervalo-heartbeat deve ser maior que zero')

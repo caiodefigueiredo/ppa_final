@@ -9,17 +9,12 @@ def normalizar_modo(modo: str) -> str:
     return {'static': 'estatico', 'adaptive': 'adaptativo'}.get(modo, modo)
 
 
-def normalizar_unidade(unidade: str) -> str:
-    return {'range': 'intervalo', 'blocks': 'blocos'}.get(unidade, unidade)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description='Executa mestre e trabalhadores locais para validação rápida.')
     parser.add_argument('--inicio', '--start', dest='inicio', type=int, required=True)
     parser.add_argument('--fim', '--end', dest='fim', type=int, required=True)
     parser.add_argument('--trabalhadores', '--workers', dest='trabalhadores', type=int, default=3)
     parser.add_argument('--modo', '--mode', dest='modo', choices=['estatico', 'adaptativo', 'static', 'adaptive'], default='adaptativo')
-    parser.add_argument('--modo-unidade', '--unit-mode', dest='modo_unidade', choices=['intervalo', 'blocos', 'range', 'blocks'], default='blocos')
     parser.add_argument('--nucleos-trabalhador', '--worker-cores', dest='nucleos_trabalhador', default=None, help='opcional: sobrescreve localmente os núcleos usados por cada trabalhador; se omitido, cada worker usa auto')
     parser.add_argument('--porta', '--port', dest='porta', type=int, default=9000)
     parser.add_argument('--banco', '--db', dest='banco', default='resultados.db')
@@ -30,12 +25,11 @@ def main() -> None:
 
     diretorio_src = Path(__file__).resolve().parent
     modo = normalizar_modo(argumentos.modo)
-    modo_unidade = normalizar_unidade(argumentos.modo_unidade)
     comando_mestre = [
         sys.executable, str(diretorio_src / 'mestre.py'),
         '--endereco', '127.0.0.1', '--porta', str(argumentos.porta), '--max-trabalhadores', str(argumentos.trabalhadores),
         '--inicio', str(argumentos.inicio), '--fim', str(argumentos.fim), '--modo', modo,
-        '--modo-unidade', modo_unidade, '--tamanho-bloco-base', str(argumentos.tamanho_bloco_base),
+        '--tamanho-bloco-base', str(argumentos.tamanho_bloco_base),
         '--tempo-alvo', str(argumentos.tempo_alvo), '--banco', argumentos.banco,
     ]
     if argumentos.calibrado:

@@ -45,10 +45,9 @@ class Mestre:
     def __init__(self, argumentos: argparse.Namespace):
         self.argumentos = argumentos
         self.armazenamento = Armazenamento(argumentos.banco)
-        self.id_execucao = self.armazenamento.criar_execucao(argumentos.modo, argumentos.inicio, argumentos.fim, argumentos.max_trabalhadores, argumentos.modo_unidade, observacoes='execução mestre-trabalhador por socket')
+        self.id_execucao = self.armazenamento.criar_execucao(argumentos.modo, argumentos.inicio, argumentos.fim, argumentos.max_trabalhadores, 'blocos', observacoes='execução mestre-trabalhador por socket')
         self.trabalhadores: Dict[str, ConexaoTrabalhador] = {}
         self.blocos_pendentes: List[BlocoIntervalo] = []
-        self.proximo_inicio_intervalo = argumentos.inicio
         self.contador_tarefa = 0
         self.tarefas: Dict[int, MetadadosTarefa] = {}
         self.total_primos = 0
@@ -59,15 +58,13 @@ class Mestre:
         self.processamento_iniciado = False
 
     def preparar_blocos(self) -> None:
-        if self.argumentos.modo_unidade == 'blocos':
-            blocos = criar_blocos_ordenados(self.argumentos.inicio, self.argumentos.fim, self.argumentos.tamanho_bloco_base)
-            if self.argumentos.ordem_blocos == 'embaralhado':
-                aleatorio = random.Random(self.argumentos.semente)
-                aleatorio.shuffle(blocos)
-            elif self.argumentos.ordem_blocos == 'intercalado':
-                blocos = intercalar_baixo_alto(blocos)
-            self.blocos_pendentes = blocos
-            self.proximo_inicio_intervalo = self.argumentos.fim + 1
+        blocos = criar_blocos_ordenados(self.argumentos.inicio, self.argumentos.fim, self.argumentos.tamanho_bloco_base)
+        if self.argumentos.ordem_blocos == 'embaralhado':
+            aleatorio = random.Random(self.argumentos.semente)
+            aleatorio.shuffle(blocos)
+        elif self.argumentos.ordem_blocos == 'intercalado':
+            blocos = intercalar_baixo_alto(blocos)
+        self.blocos_pendentes = blocos
 
     def iniciar_servidor(self) -> socket.socket:
         servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -157,27 +154,16 @@ class Mestre:
         print(f'[mestre] iniciando processamento com {quantidade} trabalhador(es) conectado(s); novos trabalhadores ainda poderão entrar enquanto houver trabalho pendente.')
 
     def existe_trabalho_pendente(self) -> bool:
-        if self.blocos_pendentes:
-            return True
-        return self.proximo_inicio_intervalo <= self.argumentos.fim
+        return bool(self.blocos_pendentes)
 
     def devolver_tarefa_pendente(self, metadados: MetadadosTarefa) -> None:
         self.blocos_pendentes = list(metadados.intervalos) + self.blocos_pendentes
 
     def alocar_intervalos(self, trabalhador: ConexaoTrabalhador) -> List[BlocoIntervalo]:
-        if self.blocos_pendentes:
-            if self.argumentos.modo_unidade == 'blocos':
-                quantidade_blocos = max(1, int(round(trabalhador.janela)))
-            else:
-                quantidade_blocos = 1
-            alocados = self.blocos_pendentes[:quantidade_blocos]
-            self.blocos_pendentes = self.blocos_pendentes[quantidade_blocos:]
-            return alocados
-        tamanho = max(1, int(round(trabalhador.janela)))
-        inicio = self.proximo_inicio_intervalo
-        fim = min(self.argumentos.fim, inicio + tamanho - 1)
-        self.proximo_inicio_intervalo = fim + 1
-        return [BlocoIntervalo(inicio, fim)]
+        quantidade_blocos = max(1, int(round(trabalhador.janela)))
+        alocados = self.blocos_pendentes[:quantidade_blocos]
+        self.blocos_pendentes = self.blocos_pendentes[quantidade_blocos:]
+        return alocados
 
     def despachar_se_possivel(self, trabalhador: ConexaoTrabalhador) -> None:
         with self.trava:
@@ -375,11 +361,10 @@ def criar_parser() -> argparse.ArgumentParser:
     parser.add_argument('--inicio', dest='inicio', type=int, required=True)
     parser.add_argument('--fim', dest='fim', type=int, required=True)
     parser.add_argument('--modo', dest='modo', choices=['estatico', 'adaptativo'], default='adaptativo')
-    parser.add_argument('--modo-unidade', dest='modo_unidade', choices=['intervalo', 'blocos'], default='blocos')
     parser.add_argument('--tamanho-bloco-base', dest='tamanho_bloco_base', type=int, default=10000)
     parser.add_argument('--ordem-blocos', dest='ordem_blocos', choices=['ordenado', 'embaralhado', 'intercalado'], default='intercalado')
     parser.add_argument('--semente', dest='semente', type=int, default=42)
-    parser.add_argument('--janela-inicial', dest='janela_inicial', type=float, default=2.0, help='tamanho do intervalo em modo_unidade=intervalo ou quantidade de blocos em modo_unidade=blocos')
+    parser.add_argument('--janela-inicial', dest='janela_inicial', type=float, default=2.0, help='quantidade inicial de blocos enviados por tarefa para cada trabalhador')
     parser.add_argument('--janela-minima', dest='janela_minima', type=float, default=1.0)
     parser.add_argument('--janela-maxima', dest='janela_maxima', type=float, default=64.0)
     parser.add_argument('--passo-aditivo', dest='passo_aditivo', type=float, default=1.0)

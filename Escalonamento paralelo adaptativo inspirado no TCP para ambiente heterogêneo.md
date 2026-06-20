@@ -2,13 +2,13 @@
 
 Este projeto implementa, em Python, um protótipo de **escalonamento paralelo adaptativo** inspirado em conceitos da camada TCP. O sistema possui um processo **mestre**, vários **trabalhadores** e três modos de avaliação: execução sequencial, paralela estática e paralela adaptativa.
 
-A versão atual usa nomes em português nas variáveis principais, nos campos das mensagens entre mestre e trabalhadores e nas tabelas SQLite. Alguns argumentos antigos em inglês foram mantidos como aliases para facilitar compatibilidade, mas a documentação recomenda os nomes em português.
+A versão atual usa nomes em português nas variáveis principais, nos campos das mensagens entre mestre e trabalhadores e nas tabelas SQLite. No mestre, os argumentos de linha de comando foram padronizados em português, e a distribuição de trabalho opera exclusivamente por blocos.
 
 ## Estrutura
 
 | Arquivo | Função |
 |---|---|
-| `src/mestre.py` | Processo mestre responsável por distribuir intervalos, ajustar janelas, aceitar dinamicamente até 30 trabalhadores conectados manualmente por IP e porta, monitorar heartbeats e reenfileirar tarefas de trabalhadores inativos. |
+| `src/mestre.py` | Processo mestre responsável por distribuir blocos de intervalos, ajustar janelas, aceitar dinamicamente até 30 trabalhadores conectados manualmente por IP e porta, monitorar heartbeats e reenfileirar tarefas de trabalhadores inativos. |
 | `src/trabalhador.py` | Processo trabalhador responsável por contar primos nos intervalos recebidos, detectar localmente seus próprios núcleos por padrão e enviar heartbeats periódicos ao mestre. |
 | `src/run_sequential.py` | Linha de base sequencial. |
 | `src/run_local_experiment.py` | Executa mestre e trabalhadores locais automaticamente. |
@@ -60,7 +60,6 @@ python3 src/mestre.py \
   --inicio 1000000 \
   --fim 5000000 \
   --modo adaptativo \
-  --modo-unidade blocos \
   --tamanho-bloco-base 10000 \
   --banco resultados.db
 ```
@@ -85,7 +84,7 @@ O trabalhador envia periodicamente ao mestre uma mensagem JSON do tipo `heartbea
 | Mestre | `--timeout-heartbeat` | `180` | Define o tempo máximo, em segundos, sem heartbeat antes de considerar o trabalhador inativo. |
 | Mestre | `--intervalo-monitoramento-heartbeat` | `5` | Define a periodicidade, em segundos, da verificação interna de expiração dos heartbeats. |
 
-Quando um trabalhador fica inativo por mais tempo que `--timeout-heartbeat`, o mestre fecha sua conexão, remove o trabalhador da lista de ativos e verifica se havia uma tarefa em andamento associada a ele. Se houver, os intervalos dessa tarefa são devolvidos à fila de pendências para que outro trabalhador possa processá-los. Resultados tardios vindos de um trabalhador já desconectado são ignorados, evitando dupla contagem.
+Quando um trabalhador fica inativo por mais tempo que `--timeout-heartbeat`, o mestre fecha sua conexão, remove o trabalhador da lista de ativos e verifica se havia uma tarefa em andamento associada a ele. Se houver, os blocos dessa tarefa são devolvidos à fila de pendências para que outro trabalhador possa processá-los. Resultados tardios vindos de um trabalhador já desconectado são ignorados, evitando dupla contagem.
 
 ## Campos principais do SQLite
 
