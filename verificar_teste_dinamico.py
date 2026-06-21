@@ -1,73 +1,22 @@
-import json
-import socket
-import time
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
+import sqlite3
+import sys
 
-CODIFICACAO = 'utf-8'
-
-
-def agora() -> float:
-    return time.perf_counter()
-
-
-def enviar_json(conexao: socket.socket, mensagem: Dict[str, Any]) -> None:
-    dados = json.dumps(mensagem, separators=(',', ':')).encode(CODIFICACAO) + b'\n'
-    conexao.sendall(dados)
-
-
-def receber_json(arquivo_conexao) -> Optional[Dict[str, Any]]:
-    linha = arquivo_conexao.readline()
-    if not linha:
-        return None
-    if isinstance(linha, bytes):
-        linha = linha.decode(CODIFICACAO)
-    return json.loads(linha)
-
-
-@dataclass
-class BlocoIntervalo:
-    inicio: int
-    fim: int
-
-    @property
-    def tamanho(self) -> int:
-        return max(0, self.fim - self.inicio + 1)
-
-    def para_dict(self) -> Dict[str, int]:
-        return asdict(self)
-
-
-def estimar_custo_intervalo(inicio: int, fim: int) -> float:
-    """Estimativa simples de custo para normalização.
-
-    Para teste por divisão até sqrt(n), intervalos com números maiores tendem a
-    custar mais. A função não precisa ser perfeita; ela serve para suavizar a
-    decisão adaptativa e reduzir o viés temporal de ranges crescentes.
-    """
-    if fim < inicio:
-        return 0.0
-    meio = (inicio + fim) / 2.0
-    return (fim - inicio + 1) * max(meio, 1.0) ** 0.5
-
-
-def criar_blocos_ordenados(inicio: int, fim: int, tamanho_bloco: int) -> List[BlocoIntervalo]:
-    blocos: List[BlocoIntervalo] = []
-    atual = inicio
-    while atual <= fim:
-        fim_bloco = min(fim, atual + tamanho_bloco - 1)
-        blocos.append(BlocoIntervalo(atual, fim_bloco))
-        atual = fim_bloco + 1
-    return blocos
-
-
-def intercalar_baixo_alto(blocos: List[BlocoIntervalo]) -> List[BlocoIntervalo]:
-    resultado: List[BlocoIntervalo] = []
-    baixo, alto = 0, len(blocos) - 1
-    while baixo <= alto:
-        resultado.append(blocos[baixo])
-        if baixo != alto:
-            resultado.append(blocos[alto])
-        baixo += 1
-        alto -= 1
-    return resultado
+banco = sys.argv[1]
+con = sqlite3.connect(banco)
+trabalhadores = con.execute(
+    'select id_trabalhador, tarefas_concluidas, numeros_processados, primos_encontrados '
+    'from trabalhadores order by id_trabalhador'
+).fetchall()
+execucao = con.execute(
+    'select total_primos, total_numeros from execucoes order by id_execucao desc limit 1'
+).fetchone()
+print('trabalhadores=', trabalhadores)
+print('execucao=', execucao)
+ids = {linha[0] for linha in trabalhadores}
+if 'trabalhador-inicial' not in ids or 'trabalhador-tardio' not in ids:
+    raise SystemExit('falha: nem todos os trabalhadores foram registrados')
+if not any(linha[0] == 'trabalhador-tardio' and linha[1] > 0 and linha[2] > 0 for linha in trabalhadores):
+    raise SystemExit('falha: trabalhador tardio não recebeu tarefas')
+if execucao is None or execucao[0] != 148933 or execucao[1] != 2000000:
+    raise SystemExit(f'falha: resultado inesperado da execução: {execucao}')
+print('teste dinamico aprovado')

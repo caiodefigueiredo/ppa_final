@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS tarefas (
     quantidade_primos INTEGER NOT NULL,
     janela_antes REAL,
     janela_depois REAL,
-    custo_estimado REAL,
     segundos_trabalhador REAL NOT NULL,
     segundos_ida_volta REAL,
     criado_em REAL NOT NULL,
@@ -92,11 +91,11 @@ class Armazenamento:
     def adicionar_tarefa(self, id_execucao: int, tarefa: Dict[str, Any]) -> None:
         self.conexao.execute(
             """INSERT OR REPLACE INTO tarefas(id_tarefa,id_execucao,id_trabalhador,modo,intervalos_json,quantidade_numeros,quantidade_primos,
-               janela_antes,janela_depois,custo_estimado,segundos_trabalhador,segundos_ida_volta,criado_em,fim_em)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               janela_antes,janela_depois,segundos_trabalhador,segundos_ida_volta,criado_em,fim_em)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 tarefa['id_tarefa'], id_execucao, tarefa.get('id_trabalhador'), tarefa['modo'], tarefa['intervalos_json'], tarefa['quantidade_numeros'],
-                tarefa['quantidade_primos'], tarefa.get('janela_antes'), tarefa.get('janela_depois'), tarefa.get('custo_estimado'),
+                tarefa['quantidade_primos'], tarefa.get('janela_antes'), tarefa.get('janela_depois'),
                 tarefa['segundos_trabalhador'], tarefa.get('segundos_ida_volta'), tarefa['criado_em'], tarefa['fim_em'],
             ),
         )

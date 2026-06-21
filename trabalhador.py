@@ -146,11 +146,11 @@ def executar_trabalhador(endereco_mestre: str, porta_mestre: int, id_trabalhador
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Trabalhador para contagem de primos via socket.')
-    parser.add_argument('--endereco-mestre', '--master-host', dest='endereco_mestre', required=True)
-    parser.add_argument('--porta-mestre', '--master-port', dest='porta_mestre', type=int, default=9000)
-    parser.add_argument('--id-trabalhador', '--worker-id', dest='id_trabalhador', default=None)
-    parser.add_argument('--nucleos', '--cores', dest='nucleos', default='auto')
-    parser.add_argument('--intervalo-heartbeat', dest='intervalo_heartbeat', type=float, default=60.0)
+    parser.add_argument('--endereco-mestre', dest='endereco_mestre', required=True)
+    parser.add_argument('--porta-mestre', dest='porta_mestre', type=int, default=9000)
+    parser.add_argument('--id-trabalhador', dest='id_trabalhador', default=None)
+    parser.add_argument('--nucleos', dest='nucleos', default='auto', help='configuração local do trabalhador: auto usa as CPUs disponíveis neste worker, ou informe um número inteiro')
+    parser.add_argument('--intervalo-heartbeat', dest='intervalo_heartbeat', type=float, default=60.0, help='intervalo em segundos entre heartbeats enviados ao mestre; padrão: 60 segundos')
     argumentos = parser.parse_args()
     if argumentos.intervalo_heartbeat <= 0:
         raise SystemExit('--intervalo-heartbeat deve ser maior que zero')

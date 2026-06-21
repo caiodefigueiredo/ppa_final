@@ -34,9 +34,9 @@ def contar_primos_intervalo(inicio: int, fim: int) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Execução sequencial para linha de base.')
-    parser.add_argument('--inicio', '--start', dest='inicio', type=int, required=True)
-    parser.add_argument('--fim', '--end', dest='fim', type=int, required=True)
-    parser.add_argument('--banco', '--db', dest='banco', default='resultados.db')
+    parser.add_argument('--inicio', dest='inicio', type=int, required=True)
+    parser.add_argument('--fim', dest='fim', type=int, required=True)
+    parser.add_argument('--banco', dest='banco', default='resultados.db')
     argumentos = parser.parse_args()
 
     armazenamento = Armazenamento(argumentos.banco)
@@ -53,7 +53,6 @@ def main() -> None:
         'quantidade_primos': primos,
         'janela_antes': None,
         'janela_depois': None,
-        'custo_estimado': None,
         'segundos_trabalhador': tempo_decorrido,
         'segundos_ida_volta': tempo_decorrido,
         'criado_em': inicio_tempo,

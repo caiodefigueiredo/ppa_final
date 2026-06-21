@@ -38,19 +38,6 @@ class BlocoIntervalo:
         return asdict(self)
 
 
-def estimar_custo_intervalo(inicio: int, fim: int) -> float:
-    """Estimativa simples de custo para normalização.
-
-    Para teste por divisão até sqrt(n), intervalos com números maiores tendem a
-    custar mais. A função não precisa ser perfeita; ela serve para suavizar a
-    decisão adaptativa e reduzir o viés temporal de ranges crescentes.
-    """
-    if fim < inicio:
-        return 0.0
-    meio = (inicio + fim) / 2.0
-    return (fim - inicio + 1) * max(meio, 1.0) ** 0.5
-
-
 def criar_blocos_ordenados(inicio: int, fim: int, tamanho_bloco: int) -> List[BlocoIntervalo]:
     blocos: List[BlocoIntervalo] = []
     atual = inicio

@@ -1,80 +1,165 @@
 import argparse
+import html
 import sqlite3
 from pathlib import Path
 
 
+LARGURA = 1000
+ALTURA = 520
+MARGEM_ESQUERDA = 90
+MARGEM_DIREITA = 40
+MARGEM_SUPERIOR = 70
+MARGEM_INFERIOR = 115
+COR_TEXTO = '#1f2937'
+COR_EIXO = '#374151'
+COR_GRADE = '#e5e7eb'
+CORES_SERIES = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#ea580c', '#0891b2', '#be123c', '#4d7c0f']
+
+
+def escapar(valor) -> str:
+    return html.escape(str(valor), quote=True)
+
+
+def formatar_numero(valor: float) -> str:
+    if abs(valor) >= 1000:
+        return f'{valor:,.0f}'.replace(',', '.')
+    if abs(valor) >= 10:
+        return f'{valor:.1f}'.replace('.', ',')
+    return f'{valor:.2f}'.replace('.', ',')
+
+
+def abreviar_rotulo(rotulo: str, limite: int = 18) -> str:
+    return rotulo if len(rotulo) <= limite else rotulo[: limite - 1] + '…'
+
+
+def cabecalho_svg(titulo: str, subtitulo: str = '') -> list[str]:
+    linhas = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{LARGURA}" height="{ALTURA}" viewBox="0 0 {LARGURA} {ALTURA}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        f'<text x="{LARGURA / 2}" y="34" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="{COR_TEXTO}">{escapar(titulo)}</text>',
+    ]
+    if subtitulo:
+        linhas.append(f'<text x="{LARGURA / 2}" y="58" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#6b7280">{escapar(subtitulo)}</text>')
+    return linhas
+
+
+def rodape_svg(linhas: list[str]) -> str:
+    linhas.append('</svg>')
+    return '\n'.join(linhas) + '\n'
+
+
+def desenhar_eixos(linhas: list[str], maximo: float, rotulo_y: str, rotulo_x: str) -> None:
+    area_largura = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA
+    area_altura = ALTURA - MARGEM_SUPERIOR - MARGEM_INFERIOR
+    x0 = MARGEM_ESQUERDA
+    y0 = ALTURA - MARGEM_INFERIOR
+    linhas.append(f'<line x1="{x0}" y1="{MARGEM_SUPERIOR}" x2="{x0}" y2="{y0}" stroke="{COR_EIXO}" stroke-width="1.5"/>')
+    linhas.append(f'<line x1="{x0}" y1="{y0}" x2="{x0 + area_largura}" y2="{y0}" stroke="{COR_EIXO}" stroke-width="1.5"/>')
+    for indice in range(6):
+        valor = maximo * indice / 5
+        y = y0 - (valor / maximo * area_altura if maximo else 0)
+        linhas.append(f'<line x1="{x0}" y1="{y:.2f}" x2="{x0 + area_largura}" y2="{y:.2f}" stroke="{COR_GRADE}" stroke-width="1"/>')
+        linhas.append(f'<text x="{x0 - 10}" y="{y + 4:.2f}" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">{formatar_numero(valor)}</text>')
+    linhas.append(f'<text x="{LARGURA / 2}" y="{ALTURA - 18}" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="{COR_TEXTO}">{escapar(rotulo_x)}</text>')
+    linhas.append(f'<text x="18" y="{MARGEM_SUPERIOR + area_altura / 2}" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="{COR_TEXTO}" transform="rotate(-90 18 {MARGEM_SUPERIOR + area_altura / 2})">{escapar(rotulo_y)}</text>')
+
+
+def salvar_grafico_barras(caminho: Path, titulo: str, rotulos: list[str], valores: list[float], rotulo_y: str, rotulo_x: str) -> None:
+    linhas = cabecalho_svg(titulo)
+    maximo = max(max(valores), 1) * 1.12 if valores else 1
+    desenhar_eixos(linhas, maximo, rotulo_y, rotulo_x)
+    area_largura = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA
+    area_altura = ALTURA - MARGEM_SUPERIOR - MARGEM_INFERIOR
+    y0 = ALTURA - MARGEM_INFERIOR
+    largura_faixa = area_largura / max(len(valores), 1)
+    largura_barra = max(12, min(55, largura_faixa * 0.62))
+    for indice, (rotulo, valor) in enumerate(zip(rotulos, valores)):
+        x = MARGEM_ESQUERDA + indice * largura_faixa + (largura_faixa - largura_barra) / 2
+        altura = valor / maximo * area_altura if maximo else 0
+        y = y0 - altura
+        cor = CORES_SERIES[indice % len(CORES_SERIES)]
+        linhas.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{largura_barra:.2f}" height="{altura:.2f}" fill="{cor}"/>')
+        linhas.append(f'<text x="{x + largura_barra / 2:.2f}" y="{y - 7:.2f}" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="{COR_TEXTO}">{formatar_numero(valor)}</text>')
+        linhas.append(f'<text x="{x + largura_barra / 2:.2f}" y="{y0 + 18}" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#4b5563" transform="rotate(-35 {x + largura_barra / 2:.2f} {y0 + 18})">{escapar(abreviar_rotulo(rotulo))}</text>')
+    caminho.write_text(rodape_svg(linhas), encoding='utf-8')
+
+
+def salvar_grafico_linhas(caminho: Path, titulo: str, series: dict[str, list[tuple[float, float]]], rotulo_y: str, rotulo_x: str) -> None:
+    todos_pontos = [ponto for pontos in series.values() for ponto in pontos]
+    linhas = cabecalho_svg(titulo)
+    if not todos_pontos:
+        caminho.write_text(rodape_svg(linhas), encoding='utf-8')
+        return
+    xs = [ponto[0] for ponto in todos_pontos]
+    ys = [ponto[1] for ponto in todos_pontos]
+    min_x, max_x = min(xs), max(xs)
+    max_y = max(max(ys), 1) * 1.12
+    desenhar_eixos(linhas, max_y, rotulo_y, rotulo_x)
+    area_largura = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA
+    area_altura = ALTURA - MARGEM_SUPERIOR - MARGEM_INFERIOR
+    y0 = ALTURA - MARGEM_INFERIOR
+
+    def escala_x(valor: float) -> float:
+        if max_x == min_x:
+            return MARGEM_ESQUERDA + area_largura / 2
+        return MARGEM_ESQUERDA + (valor - min_x) / (max_x - min_x) * area_largura
+
+    def escala_y(valor: float) -> float:
+        return y0 - (valor / max_y * area_altura if max_y else 0)
+
+    for indice, (nome, pontos) in enumerate(series.items()):
+        cor = CORES_SERIES[indice % len(CORES_SERIES)]
+        pontos_ordenados = sorted(pontos)
+        sequencia = ' '.join(f'{escala_x(x):.2f},{escala_y(y):.2f}' for x, y in pontos_ordenados)
+        linhas.append(f'<polyline points="{sequencia}" fill="none" stroke="{cor}" stroke-width="2.5"/>')
+        for x, y in pontos_ordenados:
+            linhas.append(f'<circle cx="{escala_x(x):.2f}" cy="{escala_y(y):.2f}" r="4" fill="{cor}"/>')
+        y_legenda = MARGEM_SUPERIOR + 18 + indice * 22
+        x_legenda = LARGURA - 260
+        linhas.append(f'<rect x="{x_legenda}" y="{y_legenda - 10}" width="14" height="14" fill="{cor}"/>')
+        linhas.append(f'<text x="{x_legenda + 22}" y="{y_legenda + 2}" font-family="Arial, sans-serif" font-size="12" fill="{COR_TEXTO}">{escapar(nome)}</text>')
+
+    for indice in range(6):
+        valor = min_x + (max_x - min_x) * indice / 5 if max_x != min_x else min_x
+        x = escala_x(valor)
+        linhas.append(f'<text x="{x:.2f}" y="{y0 + 18}" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#4b5563">{formatar_numero(valor)}</text>')
+    caminho.write_text(rodape_svg(linhas), encoding='utf-8')
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Gera gráficos simples a partir do SQLite.')
-    parser.add_argument('--db', default='results.db')
-    parser.add_argument('--out-dir', default='plots')
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Gera gráficos SVG simples a partir do SQLite, usando somente a biblioteca padrão.')
+    parser.add_argument('--banco', dest='banco', default='resultados.db')
+    parser.add_argument('--saida', dest='saida', default='graficos')
+    argumentos = parser.parse_args()
 
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        raise SystemExit('Instale matplotlib para gerar gráficos: pip install matplotlib')
+    saida = Path(argumentos.saida)
+    saida.mkdir(parents=True, exist_ok=True)
+    conexao = sqlite3.connect(argumentos.banco)
 
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(args.db)
+    execucoes = conexao.execute('SELECT id_execucao, modo, segundos_totais, vazao_numeros_por_segundo FROM execucoes ORDER BY id_execucao').fetchall()
+    if execucoes:
+        rotulos = [f'{linha[0]}-{linha[1]}' for linha in execucoes]
+        tempos = [float(linha[2] or 0.0) for linha in execucoes]
+        salvar_grafico_barras(saida / 'tempo_total.svg', 'Comparação de tempo total por execução', rotulos, tempos, 'Tempo total (s)', 'Execução')
 
-    runs = conn.execute('SELECT run_id, mode, total_seconds, throughput_numbers_per_sec FROM runs ORDER BY run_id').fetchall()
-    if runs:
-        labels = [f'{r[0]}-{r[1]}' for r in runs]
-        times = [r[2] or 0 for r in runs]
-        plt.figure(figsize=(10, 5))
-        plt.bar(labels, times)
-        plt.ylabel('Tempo total (s)')
-        plt.xlabel('Execução')
-        plt.title('Comparação de tempo total por execução')
-        plt.xticks(rotation=30, ha='right')
-        plt.tight_layout()
-        plt.savefig(out / 'tempo_total.png', dpi=150)
-        plt.close()
+        vazoes = [float(linha[3] or 0.0) for linha in execucoes]
+        salvar_grafico_barras(saida / 'throughput.svg', 'Throughput por execução', rotulos, vazoes, 'Números processados por segundo', 'Execução')
 
-        throughputs = [r[3] or 0 for r in runs]
-        plt.figure(figsize=(10, 5))
-        plt.bar(labels, throughputs)
-        plt.ylabel('Números processados por segundo')
-        plt.xlabel('Execução')
-        plt.title('Throughput por execução')
-        plt.xticks(rotation=30, ha='right')
-        plt.tight_layout()
-        plt.savefig(out / 'throughput.png', dpi=150)
-        plt.close()
+    tarefas = conexao.execute('SELECT id_tarefa, id_trabalhador, janela_antes, janela_depois FROM tarefas WHERE janela_antes IS NOT NULL ORDER BY id_tarefa').fetchall()
+    if tarefas:
+        por_trabalhador: dict[str, list[tuple[float, float]]] = {}
+        for id_tarefa, id_trabalhador, antes, depois in tarefas:
+            por_trabalhador.setdefault(str(id_trabalhador), []).append((float(id_tarefa), float(depois or 0.0)))
+        salvar_grafico_linhas(saida / 'evolucao_janela.svg', 'Evolução da janela adaptativa por trabalhador', por_trabalhador, 'Janela após ajuste', 'Tarefa')
 
-    tasks = conn.execute('SELECT task_id, worker_id, window_before, window_after FROM tasks WHERE window_before IS NOT NULL ORDER BY task_id').fetchall()
-    if tasks:
-        by_worker = {}
-        for task_id, worker_id, before, after in tasks:
-            by_worker.setdefault(worker_id, []).append((task_id, after))
-        plt.figure(figsize=(10, 5))
-        for worker_id, values in by_worker.items():
-            plt.plot([v[0] for v in values], [v[1] for v in values], marker='o', label=worker_id)
-        plt.ylabel('Janela após ajuste')
-        plt.xlabel('Tarefa')
-        plt.title('Evolução da janela adaptativa por trabalhador')
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(out / 'evolucao_janela.png', dpi=150)
-        plt.close()
+    linhas_trabalhadores = conexao.execute('SELECT id_execucao, id_trabalhador, numeros_processados, total_segundos_trabalhador FROM trabalhadores ORDER BY id_execucao, id_trabalhador').fetchall()
+    if linhas_trabalhadores:
+        rotulos = [f'{linha[0]}-{linha[1]}' for linha in linhas_trabalhadores]
+        numeros = [float(linha[2] or 0.0) for linha in linhas_trabalhadores]
+        salvar_grafico_barras(saida / 'carga_por_trabalhador.svg', 'Distribuição de carga por trabalhador', rotulos, numeros, 'Números processados', 'Trabalhador')
 
-    worker_rows = conn.execute('SELECT run_id, worker_id, numbers_done, total_worker_seconds FROM workers ORDER BY run_id, worker_id').fetchall()
-    if worker_rows:
-        labels = [f'{r[0]}-{r[1]}' for r in worker_rows]
-        nums = [r[2] for r in worker_rows]
-        plt.figure(figsize=(10, 5))
-        plt.bar(labels, nums)
-        plt.ylabel('Números processados')
-        plt.xlabel('Worker')
-        plt.title('Distribuição de carga por trabalhador')
-        plt.xticks(rotation=30, ha='right')
-        plt.tight_layout()
-        plt.savefig(out / 'carga_por_worker.png', dpi=150)
-        plt.close()
-
-    conn.close()
-    print(f'Gráficos salvos em: {out.resolve()}')
+    conexao.close()
+    print(f'Gráficos SVG salvos em: {saida.resolve()}')
 
 
 if __name__ == '__main__':
