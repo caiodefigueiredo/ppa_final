@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="500.0" y="34" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#1f2937">Throughput por execução</text>
+<line x1="90" y1="70" x2="90" y2="405" stroke="#374151" stroke-width="1.5"/>
+<line x1="90" y1="405" x2="960" y2="405" stroke="#374151" stroke-width="1.5"/>
+<line x1="90" y1="405.00" x2="960" y2="405.00" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80" y="409.00" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">0,00</text>
+<line x1="90" y1="338.00" x2="960" y2="338.00" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80" y="342.00" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">44.107</text>
+<line x1="90" y1="271.00" x2="960" y2="271.00" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80" y="275.00" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">88.214</text>
+<line x1="90" y1="204.00" x2="960" y2="204.00" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80" y="208.00" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">132.321</text>
+<line x1="90" y1="137.00" x2="960" y2="137.00" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80" y="141.00" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">176.428</text>
+<line x1="90" y1="70.00" x2="960" y2="70.00" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80" y="74.00" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">220.536</text>
+<text x="500.0" y="502" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#1f2937">Execução</text>
+<text x="18" y="237.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#1f2937" transform="rotate(-90 18 237.5)">Números processados por segundo</text>
+<rect x="149.50" y="152.36" width="55.00" height="252.64" fill="#2563eb"/>
+<text x="177.00" y="145.36" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1f2937">166.318</text>
+<text x="177.00" y="423" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#4b5563" transform="rotate(-35 177.00 423)">1-estatico</text>
+<rect x="323.50" y="162.71" width="55.00" height="242.29" fill="#059669"/>
+<text x="351.00" y="155.71" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1f2937">159.502</text>
+<text x="351.00" y="423" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#4b5563" transform="rotate(-35 351.00 423)">2-estatico</text>
+<rect x="497.50" y="118.67" width="55.00" height="286.33" fill="#dc2626"/>
+<text x="525.00" y="111.67" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1f2937">188.497</text>
+<text x="525.00" y="423" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#4b5563" transform="rotate(-35 525.00 423)">3-adaptativo</text>
+<rect x="671.50" y="118.85" width="55.00" height="286.15" fill="#7c3aed"/>
+<text x="699.00" y="111.85" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1f2937">188.379</text>
+<text x="699.00" y="423" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#4b5563" transform="rotate(-35 699.00 423)">4-adaptativo</text>
+<rect x="845.50" y="105.89" width="55.00" height="299.11" fill="#ea580c"/>
+<text x="873.00" y="98.89" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1f2937">196.907</text>
+<text x="873.00" y="423" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#4b5563" transform="rotate(-35 873.00 423)">5-adaptativo</text>
+</svg>

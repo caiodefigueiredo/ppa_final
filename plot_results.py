@@ -84,7 +84,17 @@ def salvar_grafico_barras(caminho: Path, titulo: str, rotulos: list[str], valore
     caminho.write_text(rodape_svg(linhas), encoding='utf-8')
 
 
-def salvar_grafico_linhas(caminho: Path, titulo: str, series: dict[str, list[tuple[float, float]]], rotulo_y: str, rotulo_x: str) -> None:
+def salvar_grafico_linhas(
+    caminho: Path,
+    titulo: str,
+    series: dict[str, list[tuple[float, float]]],
+    rotulo_y: str,
+    rotulo_x: str,
+    minimo_x_fixo: float | None = None,
+    maximo_x_fixo: float | None = None,
+    maximo_y_fixo: float | None = None,
+    raio_ponto: float = 4.0,
+) -> None:
     todos_pontos = [ponto for pontos in series.values() for ponto in pontos]
     linhas = cabecalho_svg(titulo)
     if not todos_pontos:
@@ -92,8 +102,9 @@ def salvar_grafico_linhas(caminho: Path, titulo: str, series: dict[str, list[tup
         return
     xs = [ponto[0] for ponto in todos_pontos]
     ys = [ponto[1] for ponto in todos_pontos]
-    min_x, max_x = min(xs), max(xs)
-    max_y = max(max(ys), 1) * 1.12
+    min_x = float(minimo_x_fixo) if minimo_x_fixo is not None else min(xs)
+    max_x = float(maximo_x_fixo) if maximo_x_fixo is not None else max(xs)
+    max_y = float(maximo_y_fixo) if maximo_y_fixo is not None else max(max(ys), 1) * 1.12
     desenhar_eixos(linhas, max_y, rotulo_y, rotulo_x)
     area_largura = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA
     area_altura = ALTURA - MARGEM_SUPERIOR - MARGEM_INFERIOR
@@ -111,9 +122,9 @@ def salvar_grafico_linhas(caminho: Path, titulo: str, series: dict[str, list[tup
         cor = CORES_SERIES[indice % len(CORES_SERIES)]
         pontos_ordenados = sorted(pontos)
         sequencia = ' '.join(f'{escala_x(x):.2f},{escala_y(y):.2f}' for x, y in pontos_ordenados)
-        linhas.append(f'<polyline points="{sequencia}" fill="none" stroke="{cor}" stroke-width="2.5"/>')
+        linhas.append(f'<polyline points="{sequencia}" fill="none" stroke="{cor}" stroke-width="0.3"/>')
         for x, y in pontos_ordenados:
-            linhas.append(f'<circle cx="{escala_x(x):.2f}" cy="{escala_y(y):.2f}" r="4" fill="{cor}"/>')
+            linhas.append(f'<circle cx="{escala_x(x):.2f}" cy="{escala_y(y):.2f}" r="{raio_ponto:.2f}" fill="{cor}"/>')
         y_legenda = MARGEM_SUPERIOR + 18 + indice * 22
         x_legenda = LARGURA - 260
         linhas.append(f'<rect x="{x_legenda}" y="{y_legenda - 10}" width="14" height="14" fill="{cor}"/>')
@@ -145,12 +156,29 @@ def main() -> None:
         vazoes = [float(linha[3] or 0.0) for linha in execucoes]
         salvar_grafico_barras(saida / 'throughput.svg', 'Throughput por execução', rotulos, vazoes, 'Números processados por segundo', 'Execução')
 
-    tarefas = conexao.execute('SELECT id_tarefa, id_trabalhador, janela_antes, janela_depois FROM tarefas WHERE janela_antes IS NOT NULL ORDER BY id_tarefa').fetchall()
+    tarefas = conexao.execute(
+        'SELECT id_execucao, id_tarefa, id_trabalhador, janela_antes, janela_depois '
+        'FROM tarefas WHERE janela_antes IS NOT NULL ORDER BY id_execucao, id_tarefa'
+    ).fetchall()
     if tarefas:
-        por_trabalhador: dict[str, list[tuple[float, float]]] = {}
-        for id_tarefa, id_trabalhador, antes, depois in tarefas:
-            por_trabalhador.setdefault(str(id_trabalhador), []).append((float(id_tarefa), float(depois or 0.0)))
-        salvar_grafico_linhas(saida / 'evolucao_janela.svg', 'Evolução da janela adaptativa por trabalhador', por_trabalhador, 'Janela após ajuste', 'Tarefa')
+        ids_execucao = sorted({int(linha[0]) for linha in tarefas})
+        for id_execucao in ids_execucao:
+            por_trabalhador: dict[str, list[tuple[float, float]]] = {}
+            for linha_execucao, id_tarefa, id_trabalhador, antes, depois in tarefas:
+                if int(linha_execucao) != id_execucao:
+                    continue
+                por_trabalhador.setdefault(str(id_trabalhador), []).append((float(id_tarefa), float(depois or 0.0)))
+            salvar_grafico_linhas(
+                saida / f'evolucao_janela_execucao_{id_execucao}.svg',
+                f'Evolução da janela adaptativa - execução {id_execucao}',
+                por_trabalhador,
+                'Janela após ajuste',
+                'Tarefa',
+                minimo_x_fixo=0.0,
+                maximo_x_fixo=650.0,
+                maximo_y_fixo=100.0,
+                raio_ponto=0.7,
+            )
 
     linhas_trabalhadores = conexao.execute('SELECT id_execucao, id_trabalhador, numeros_processados, total_segundos_trabalhador FROM trabalhadores ORDER BY id_execucao, id_trabalhador').fetchall()
     if linhas_trabalhadores:

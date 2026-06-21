@@ -44,7 +44,16 @@ class Mestre:
     def __init__(self, argumentos: argparse.Namespace):
         self.argumentos = argumentos
         self.armazenamento = Armazenamento(argumentos.banco)
-        self.id_execucao = self.armazenamento.criar_execucao(argumentos.modo, argumentos.inicio, argumentos.fim, argumentos.max_trabalhadores, 'blocos', observacoes='execução mestre-trabalhador por socket')
+        self.id_execucao = self.armazenamento.criar_execucao(
+            argumentos.modo,
+            argumentos.inicio,
+            argumentos.fim,
+            argumentos.max_trabalhadores,
+            'blocos',
+            tamanho_bloco_base=argumentos.tamanho_bloco_base,
+            tempo_alvo=argumentos.tempo_alvo,
+            observacoes='execução mestre-trabalhador por socket',
+        )
         self.trabalhadores: Dict[str, ConexaoTrabalhador] = {}
         self.blocos_pendentes: List[BlocoIntervalo] = []
         self.contador_tarefa = 0

@@ -115,8 +115,8 @@ Para testes controlados de tolerância a falhas, é possível reduzir temporaria
 
 | Tabela | Descrição |
 |---|---|
-| `execucoes` | Guarda cada rodada experimental, com `id_execucao`, `modo`, `valor_inicio`, `valor_fim`, `segundos_totais`, `total_primos` e `vazao_numeros_por_segundo`. |
-| `tarefas` | Guarda cada pacote enviado, com `id_tarefa`, `id_trabalhador`, `intervalos_json`, `quantidade_numeros`, `quantidade_primos`, `janela_antes`, `janela_depois` e tempos. |
+| `execucoes` | Guarda cada rodada experimental, com `id_execucao`, `modo`, `valor_inicio`, `valor_fim`, `tamanho_bloco_base`, `tempo_alvo`, `segundos_totais`, `total_primos` e `vazao_numeros_por_segundo`. |
+| `tarefas` | Guarda cada pacote enviado, identificado por `id_execucao` e `id_tarefa`, com `id_trabalhador`, `intervalos_json`, `quantidade_numeros`, `quantidade_primos`, `janela_antes`, `janela_depois` e tempos. |
 | `trabalhadores` | Guarda estatísticas agregadas por trabalhador, como `numeros_processados`, `primos_encontrados` e `total_segundos_trabalhador`. |
 
 ## Relação com PCAM

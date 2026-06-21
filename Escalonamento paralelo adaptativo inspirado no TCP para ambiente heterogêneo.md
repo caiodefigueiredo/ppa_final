@@ -90,6 +90,6 @@ Quando um trabalhador fica inativo por mais tempo que `--timeout-heartbeat`, o m
 
 | Tabela | Campos principais |
 |---|---|
-| `execucoes` | `id_execucao`, `modo`, `valor_inicio`, `valor_fim`, `segundos_totais`, `total_primos`, `vazao_numeros_por_segundo`. |
-| `tarefas` | `id_tarefa`, `id_trabalhador`, `intervalos_json`, `quantidade_numeros`, `quantidade_primos`, `janela_antes`, `janela_depois`. |
+| `execucoes` | `id_execucao`, `modo`, `valor_inicio`, `valor_fim`, `tamanho_bloco_base`, `tempo_alvo`, `segundos_totais`, `total_primos`, `vazao_numeros_por_segundo`. |
+| `tarefas` | `id_execucao`, `id_tarefa`, `id_trabalhador`, `intervalos_json`, `quantidade_numeros`, `quantidade_primos`, `janela_antes`, `janela_depois`; a identificação da tarefa é composta por `id_execucao` e `id_tarefa`, preservando múltiplas execuções no mesmo banco. |
 | `trabalhadores` | `id_trabalhador`, `maquina`, `nucleos`, `tarefas_concluidas`, `numeros_processados`, `primos_encontrados`. |
